@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from ortools.sat.python import cp_model
 import plotly.express as px
+import plotly.graph_objects as go
 
 
 def solve_scheduling_problem(df):
