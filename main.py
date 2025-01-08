@@ -37,35 +37,51 @@ def solve_scheduling_problem(df, machine_columns):
     horizon = sum(sum(t_row) for t_row in times)
 
     # Create variables: start, end, interval
-    start_vars = {}
-    end_vars = {}
+    start_task_vars = {}
+    end_task_per_machine_vars = {}
+    end_task_vars = {}
     intervals = {}
 
     for t_idx in range(num_tasks):
         for m_idx in machines:
             duration = times[t_idx][m_idx]
-            start_var = model.NewIntVar(0, horizon, f'start_{t_idx}_m{m_idx}')
-            end_var = model.NewIntVar(0, horizon, f'end_{t_idx}_m{m_idx}')
-            interval_var = model.NewIntervalVar(start_var, duration, end_var,
+            
+            start_task_var = model.NewIntVar(0, horizon, f'start_{t_idx}_m{m_idx}')
+            end_task_per_machine_var = model.NewIntVar(0, horizon, f'end_{t_idx}_m{m_idx}')
+            interval_var = model.NewIntervalVar(start_task_var, duration, end_task_per_machine_var,
                                                 f'interval_{t_idx}_m{m_idx}')
-            start_vars[(t_idx, m_idx)] = start_var
-            end_vars[(t_idx, m_idx)] = end_var
+
+            start_task_vars[(t_idx, m_idx)] = start_task_var
+            end_task_per_machine_vars[(t_idx, m_idx)] = end_task_per_machine_var
             intervals[(t_idx, m_idx)] = interval_var
 
-    # Constraint 1: No overlap on each machine
+        end_task_var = model.NewIntVar(0, horizon, f'end_time_task{t_idx}')
+        end_task_vars[(t_idx)] = end_task_var
+        
+
+    # Constraint 1: Ensure no 2 tasks overlap at the same machine
     for m_idx in machines:
-        model.AddNoOverlap([intervals[(t_idx, m_idx)] for t_idx in range(num_tasks)])
+        machine_intervals = [intervals[(t_idx, m_idx)] for t_idx in range(num_tasks)]
+        model.AddNoOverlap(machine_intervals)
 
-    # Constraint 2: Flow constraint from machine m to m+1 for each task
-    # and release date constraints for machine 1
+
+    # Constraint 2: Ensure the same job is not processed on multiple machines simultaneously
     for t_idx in range(num_tasks):
-        # For each consecutive pair of machines
-        for m_idx in range(len(machines) - 1):
-            model.Add(start_vars[(t_idx, m_idx + 1)] >= end_vars[(t_idx, m_idx)])
+        task_intervals = [intervals[(t_idx, m_idx)] for m_idx in machines]
+        model.AddNoOverlap(task_intervals)
 
-        # Release date on the first machine
-        release_date = tasks[t_idx]['ReleaseDate']
-        model.Add(start_vars[(t_idx, 0)] >= release_date)
+
+    # Constraint 3: The start time of a task, at each machine, should be later 
+    # than its release date
+    for t_idx in range(num_tasks):
+        for m_idx in machines:
+            model.Add(start_task_vars[(t_idx, m_idx)] >= tasks[t_idx]['ReleaseDate'])
+
+    # Constraint 4: End time for each task is its maximum end time for all the machines
+    for t_idx in range(num_tasks):
+        end_times_task = [end_task_per_machine_vars[(t_idx, m_idx)] for m_idx in machines]
+        model.AddMaxEquality(end_task_vars[(t_idx)], end_times_task)
+
 
     # Tardiness variables
     tardiness_vars = []
@@ -73,18 +89,14 @@ def solve_scheduling_problem(df, machine_columns):
         due_date = tasks[t_idx]['DueDate']
         weight = tasks[t_idx]['Weight']
 
-        # Finish time is the end on the last machine
-        last_machine = machines[-1]
-        finish_time_var = end_vars[(t_idx, last_machine)]
-
         # lateness = max(0, finish - due_date)
         # create an IntVar for lateness
-        lateness_var = model.NewIntVar(0, horizon, f'lateness_{t_idx}')
-        model.Add(lateness_var >= finish_time_var - due_date)
+        lateness_var = model.NewIntVar(0, horizon, f'lateness_task{t_idx}')
+        model.Add(lateness_var >= end_task_vars[(t_idx)] - due_date)
         model.Add(lateness_var >= 0)
 
         # Weighted tardiness = weight * lateness
-        weighted_tardiness_var = model.NewIntVar(0, weight * horizon, f'wtardiness_{t_idx}')
+        weighted_tardiness_var = model.NewIntVar(0, weight * horizon, f'wtardiness_task{t_idx}')
         model.Add(weighted_tardiness_var == lateness_var * weight)
 
         tardiness_vars.append(weighted_tardiness_var)
@@ -108,19 +120,18 @@ def solve_scheduling_problem(df, machine_columns):
         # Build output schedule info
         for t_idx in range(num_tasks):
             t_id = tasks[t_idx]['TaskID']
-            finish_time = solver.Value(end_vars[(t_idx, machines[-1])])
-            tardiness = max(0, finish_time - tasks[t_idx]['DueDate'])
+            task_end_time = solver.Value(end_task_vars[(t_idx)])
+            tardiness = max(0, task_end_time - tasks[t_idx]['DueDate'])
 
-            # Save the (machine, start, end) for Gantt
             machine_times = []
             for m_idx in machines:
-                s = solver.Value(start_vars[(t_idx, m_idx)])
-                e = solver.Value(end_vars[(t_idx, m_idx)])
-                machine_times.append((m_idx + 1, s, e))
+                start_time = solver.Value(start_task_vars[(t_idx, m_idx)])
+                end_time = solver.Value(end_task_per_machine_vars[(t_idx, m_idx)])
+                machine_times.append((m_idx, start_time, end_time))
 
             results['schedule'].append({
                 'task_id': t_id,
-                'finish_time': finish_time,
+                'finish_time': task_end_time,
                 'tardiness': tardiness,
                 'machine_times': machine_times
             })
