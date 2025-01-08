@@ -37,7 +37,7 @@ def solve_scheduling_problem(df, machine_columns):
     horizon = sum(sum(t_row) for t_row in times)
 
     # Create variables: start, end, interval
-    start_task_vars = {}
+    start_task_per_machine_vars = {}
     end_task_per_machine_vars = {}
     end_task_vars = {}
     intervals = {}
@@ -46,12 +46,12 @@ def solve_scheduling_problem(df, machine_columns):
         for m_idx in machines:
             duration = times[t_idx][m_idx]
             
-            start_task_var = model.NewIntVar(0, horizon, f'start_{t_idx}_m{m_idx}')
+            start_task_per_machine_var = model.NewIntVar(0, horizon, f'start_{t_idx}_m{m_idx}')
             end_task_per_machine_var = model.NewIntVar(0, horizon, f'end_{t_idx}_m{m_idx}')
-            interval_var = model.NewIntervalVar(start_task_var, duration, end_task_per_machine_var,
+            interval_var = model.NewIntervalVar(start_task_per_machine_var, duration, end_task_per_machine_var,
                                                 f'interval_{t_idx}_m{m_idx}')
 
-            start_task_vars[(t_idx, m_idx)] = start_task_var
+            start_task_per_machine_vars[(t_idx, m_idx)] = start_task_per_machine_var
             end_task_per_machine_vars[(t_idx, m_idx)] = end_task_per_machine_var
             intervals[(t_idx, m_idx)] = interval_var
 
@@ -75,7 +75,7 @@ def solve_scheduling_problem(df, machine_columns):
     # than its release date
     for t_idx in range(num_tasks):
         for m_idx in machines:
-            model.Add(start_task_vars[(t_idx, m_idx)] >= tasks[t_idx]['ReleaseDate'])
+            model.Add(start_task_per_machine_vars[(t_idx, m_idx)] >= tasks[t_idx]['ReleaseDate'])
 
     # Constraint 4: End time for each task is its maximum end time for all the machines
     for t_idx in range(num_tasks):
@@ -125,7 +125,7 @@ def solve_scheduling_problem(df, machine_columns):
 
             machine_times = []
             for m_idx in machines:
-                start_time = solver.Value(start_task_vars[(t_idx, m_idx)])
+                start_time = solver.Value(start_task_per_machine_vars[(t_idx, m_idx)])
                 end_time = solver.Value(end_task_per_machine_vars[(t_idx, m_idx)])
                 machine_times.append((m_idx, start_time, end_time))
 
