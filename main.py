@@ -46,7 +46,6 @@ def solve_scheduling_problem(df, machine_columns):
     z1 = model.addVars(machines, machines, jobs, vtype=GRB.BINARY, name="z")  # Binary variables
     z = model.addVars(jobs, jobs, machines, vtype=GRB.BINARY, name="z")  # Binary variables
     T = model.addVars(jobs, vtype=GRB.INTEGER, name="T")  # Tardiness for each job
-    #weighted_tardiness_var = model.addVar(jobs, vtype=GRB.INTEGER, lb=0, ub=weight * horizon, name=f"wtardiness_task_{t_idx}")
 
     model.setObjective(quicksum(tasks[j]['Weight'] * T[j] for j in jobs), GRB.MINIMIZE)
     
@@ -60,10 +59,7 @@ def solve_scheduling_problem(df, machine_columns):
             # Tardiness
             model.addConstr(T[i] >= x[i, k] + times[i][k] - tasks[i]['DueDate'], name=f"tardiness_{i}_{k}")
             model.addConstr(T[i] >= 0, name=f"non_negative_tardiness_{i}")
-            # Weighted tardiness
-            #model.addConstr(weighted_tardiness_var == T[i] * tasks[i]['Weight'], name=f"weighted_tardiness_{t_idx}")
-
-
+    
     for k in machines:
         for i in jobs:
             for j in jobs:
