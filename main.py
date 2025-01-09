@@ -4,6 +4,7 @@ from ortools.sat.python import cp_model
 import plotly.express as px
 import io
 import altair as alt
+import time
 
 
 def solve_scheduling_problem(df, machine_columns):
@@ -107,7 +108,11 @@ def solve_scheduling_problem(df, machine_columns):
 
     # Solve
     solver = cp_model.CpSolver()
+    start_time = time.time()
     status = solver.Solve(model)
+    end_time = time.time()
+
+    print(end_time - start_time)
 
     results = {
         'status': status,
