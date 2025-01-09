@@ -7,7 +7,6 @@ import altair as alt
 import time
 
 
-
 def solve_scheduling_problem(df, machine_columns):
     """
     Given a DataFrame `df` with columns:
@@ -166,7 +165,7 @@ def create_gantt_chart(schedule):
     chart = alt.Chart(df_gantt).mark_bar().encode(
         x=alt.X('Start:Q', title='Start Time'),
         x2=alt.X2('Finish:Q'),
-        y=alt.Y('Machine:N', sort='-x', title='Machine'),
+        y=alt.Y('Machine:N', sort='ascending', title='Machine'),
         color='Task:N',
         tooltip=['Task', 'Machine', 'Start', 'Finish']
     ).properties(
@@ -346,7 +345,7 @@ def main():
                     if is_satisfied:
                         st.markdown(f"- **{constraint.replace('_', ' ').capitalize()}**: Satisfied ✅ ")
                     else:
-                        st.markdown(f"- **{constraint.replace('_', ' ').capitalize()}**: Not satisfied ❌")
+                        st.markdown(f"- **{constraint.replace('_', ' ').capitalize()}**: Not satisfied ")
                         st.text(f"    {message}")
 
                 # Download solution as Excel
