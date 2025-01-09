@@ -34,10 +34,7 @@ def solve_scheduling_problem(df, machine_columns):
     machines = list(range(len(machine_columns)))  # e.g. [0,1,2] if there are 3 machine columns
 
     # Build a 2D list for processing times: times[task_idx][machine_idx]
-    times = []
-    for t in tasks:
-        row_times = [t[col] for col in machine_columns]
-        times.append(row_times)
+    times = [[t[col] for col in machine_columns] for t in tasks]
 
     # Define horizon as sum of all processing times (a crude upper bound)
     horizon = sum(sum(t_row) for t_row in times)
@@ -45,7 +42,7 @@ def solve_scheduling_problem(df, machine_columns):
     x = model.addVars(jobs, machines, vtype=GRB.INTEGER, name="x")  # Start times for a job at a given machine
     z1 = model.addVars(machines, machines, jobs, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed at machine i before machine j)
     z = model.addVars(jobs, jobs, machines, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed before job i at machine k)
-    T = model.addVars(jobs, vtype=GRB.INTEGER, name="T")  # Tardiness for each job
+    T = model.addVars(jobs, lb = 0, vtype=GRB.INTEGER, name="T")  # Tardiness for each job
 
     model.setObjective(quicksum(tasks[j]['Weight'] * T[j] for j in jobs), GRB.MINIMIZE)
     
@@ -54,11 +51,8 @@ def solve_scheduling_problem(df, machine_columns):
         for k in machines:
             # Start times must be later than the release date
             model.addConstr(x[i, k] >= tasks[i]['ReleaseDate'], name=f"start_time_nonneg_{i}_{k}")
-            # Precedence constraint
-            model.addConstr(x[i, k] >= 0, name=f"start_time_nonneg_{i}_{k}")
             # Tardiness
             model.addConstr(T[i] >= x[i, k] + times[i][k] - tasks[i]['DueDate'], name=f"tardiness_{i}_{k}")
-            model.addConstr(T[i] >= 0, name=f"non_negative_tardiness_{i}")
     
     for k in machines:
         for i in jobs:
