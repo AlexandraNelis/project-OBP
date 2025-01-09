@@ -3,6 +3,7 @@ import pandas as pd
 from ortools.sat.python import cp_model
 import plotly.express as px
 import io
+import altair as alt
 
 
 def solve_scheduling_problem(df, machine_columns):
@@ -151,18 +152,19 @@ def create_gantt_chart(schedule):
                 'Finish': end
             })
     df_gantt = pd.DataFrame(chart_data)
-    fig = px.timeline(
-        df_gantt,
-        x_start="Start",
-        x_end="Finish",
-        y="Machine",
-        color="Task",
-        title="Schedule Gantt Chart"
+    # Use Altair to ensure task lines are properly displayed
+    chart = alt.Chart(df_gantt).mark_bar().encode(
+        x=alt.X('Start:Q', title='Start Time'),
+        x2=alt.X2('Finish:Q'),
+        y=alt.Y('Machine:N', sort='-x', title='Machine'),
+        color='Task:N',
+        tooltip=['Task', 'Machine', 'Start', 'Finish']
+    ).properties(
+        title="Schedule Gantt Chart",
+        width=800,
+        height=400
     )
-    # Force numeric axis
-    fig.update_xaxes(type="linear")
-    fig.update_yaxes(autorange="reversed")
-    return fig
+    return chart
 
 
 def schedule_to_dataframe(schedule):
@@ -236,7 +238,7 @@ def main():
 
                 # Display a Gantt chart
                 fig_gantt = create_gantt_chart(schedule)
-                st.plotly_chart(fig_gantt, use_container_width=True)
+                st.altair_chart(fig_gantt, use_container_width=True)
 
                 # Display detailed schedule info
                 st.write("### Detailed Schedule")
