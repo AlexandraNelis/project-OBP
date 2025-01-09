@@ -6,6 +6,9 @@ import io
 import altair as alt
 import time
 
+import gurobipy as gp
+from gurobipy import Model, GRB, quicksum
+
 
 def solve_scheduling_problem(df, machine_columns):
     """
@@ -24,9 +27,10 @@ def solve_scheduling_problem(df, machine_columns):
             'task_id', 'finish_time', 'tardiness', 'machine_times'
     """
     tasks = df.to_dict('records')
-    model = cp_model.CpModel()
+    model = gp.Model("WeightedTardinessScheduling")
 
     num_tasks = len(tasks)
+    jobs = list(range(num_tasks))
     machines = list(range(len(machine_columns)))  # e.g. [0,1,2] if there are 3 machine columns
 
     # Build a 2D list for processing times: times[task_idx][machine_idx]
@@ -38,106 +42,84 @@ def solve_scheduling_problem(df, machine_columns):
     # Define horizon as sum of all processing times (a crude upper bound)
     horizon = sum(sum(t_row) for t_row in times)
 
-    # Create variables: start, end, interval
-    start_task_per_machine_vars = {}
-    end_task_per_machine_vars = {}
-    end_task_vars = {}
-    intervals = {}
+    x = model.addVars(jobs, machines, vtype=GRB.INTEGER, name="x")  # Start times
+    z1 = model.addVars(machines, machines, jobs, vtype=GRB.BINARY, name="z")  # Binary variables
+    z = model.addVars(jobs, jobs, machines, vtype=GRB.BINARY, name="z")  # Binary variables
+    T = model.addVars(jobs, vtype=GRB.INTEGER, name="T")  # Tardiness for each job
 
-    for t_idx in range(num_tasks):
-        for m_idx in machines:
-            duration = times[t_idx][m_idx]
-            
-            start_task_per_machine_var = model.NewIntVar(0, horizon, f'start_{t_idx}_m{m_idx}')
-            end_task_per_machine_var = model.NewIntVar(0, horizon, f'end_{t_idx}_m{m_idx}')
-            interval_var = model.NewIntervalVar(start_task_per_machine_var, duration, end_task_per_machine_var,
-                                                f'interval_{t_idx}_m{m_idx}')
-
-            start_task_per_machine_vars[(t_idx, m_idx)] = start_task_per_machine_var
-            end_task_per_machine_vars[(t_idx, m_idx)] = end_task_per_machine_var
-            intervals[(t_idx, m_idx)] = interval_var
-
-        end_task_var = model.NewIntVar(0, horizon, f'end_time_task{t_idx}')
-        end_task_vars[(t_idx)] = end_task_var
-        
-
-    # Constraint 1: Ensure no 2 tasks overlap at the same machine
-    for m_idx in machines:
-        machine_intervals = [intervals[(t_idx, m_idx)] for t_idx in range(num_tasks)]
-        model.AddNoOverlap(machine_intervals)
+    model.setObjective(quicksum(tasks[j]['Weight'] * T[j] for j in jobs), GRB.MINIMIZE)
+    
+    # Constraints
+    for i in jobs:
+        for k in machines:
+            # Start times must be non-negative
+            model.addConstr(x[i, k] >= 0, name=f"start_time_nonneg_{i}_{k}")
+            # Precedence constraint
+            model.addConstr(x[i, k] >= 0, name=f"start_time_nonneg_{i}_{k}")
+            # Tardiness
+            model.addConstr(T[i] >= x[i, k] + times[i][k] - tasks[i]['DueDate'], name=f"tardiness_{i}_{k}")
+            model.addConstr(T[i] >= 0, name=f"non_negative_tardiness_{i}")
+            # Weighted tardiness
+            #model.addConstr(weighted_tardiness_var == T[i] * tasks[i]['Weight'], name=f"weighted_tardiness_{t_idx}")
 
 
-    # Constraint 2: Ensure the same job is not processed on multiple machines simultaneously
-    for t_idx in range(num_tasks):
-        task_intervals = [intervals[(t_idx, m_idx)] for m_idx in machines]
-        model.AddNoOverlap(task_intervals)
-
-
-    # Constraint 3: The start time of a task, at each machine, should be later 
-    # than its release date
-    for t_idx in range(num_tasks):
-        for m_idx in machines:
-            model.Add(start_task_per_machine_vars[(t_idx, m_idx)] >= tasks[t_idx]['ReleaseDate'])
-
-    # Constraint 4: End time for each task is its maximum end time for all the machines
-    for t_idx in range(num_tasks):
-        end_times_task = [end_task_per_machine_vars[(t_idx, m_idx)] for m_idx in machines]
-        model.AddMaxEquality(end_task_vars[(t_idx)], end_times_task)
-
-
-    # Tardiness variables
-    tardiness_vars = []
-    for t_idx in range(num_tasks):
-        due_date = tasks[t_idx]['DueDate']
-        weight = tasks[t_idx]['Weight']
-
-        # lateness = max(0, finish - due_date)
-        # create an IntVar for lateness
-        lateness_var = model.NewIntVar(0, horizon, f'lateness_task{t_idx}')
-        model.Add(lateness_var >= end_task_vars[(t_idx)] - due_date)
-        model.Add(lateness_var >= 0)
-
-        # Weighted tardiness = weight * lateness
-        weighted_tardiness_var = model.NewIntVar(0, weight * horizon, f'wtardiness_task{t_idx}')
-        model.Add(weighted_tardiness_var == lateness_var * weight)
-
-        tardiness_vars.append(weighted_tardiness_var)
-
-    # Objective: minimize sum of weighted tardiness
-    model.Minimize(sum(tardiness_vars))
+    for k in machines:
+        for i in jobs:
+            for j in jobs:
+                if i < j:  # Avoid duplicate pairs
+                    # Disjunctive constraints
+                    model.addConstr(
+                        x[i, k] + times[i][k] <= x[j, k] + horizon * (1 - z[i, j, k]),
+                        name=f"job_{i}_before_{j}_on_machine_{k}"
+                    )
+                    model.addConstr(
+                        x[j, k] + times[j][k] <= x[i, k] + horizon * z[i, j, k],
+                        name=f"job_{i}_before_{j}_on_machine_{k}"
+                    )
+    
+    for k in jobs:
+        for i in machines:
+            for j in machines:
+                if i < j:  # Avoid duplicate pairs
+                    # Disjunctive constraints
+                    model.addConstr(
+                        x[k, i] + times[k][i] <= x[k, j] + horizon * (1 - z1[i, j, k]),
+                        name=f"job_{i}_before_{j}_on_machine_{k}"
+                    )
+                    model.addConstr(
+                        x[k, j] + times[k][j] <= x[k, i] + horizon * z1[i, j, k],
+                        name=f"machine_{i}_before_{j}_on_job_{k}"
+                    )
 
     # Solve
-    solver = cp_model.CpSolver()
     start_time = time.time()
-    status = solver.Solve(model)
+    model.optimize()
     end_time = time.time()
-
     print(end_time - start_time)
 
+    status = model.status
     results = {
         'status': status,
         'objective': None,
         'schedule': []
     }
 
-    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-        results['objective'] = solver.ObjectiveValue()
+    if status == GRB.OPTIMAL or status == GRB.SUBOPTIMAL:
+        results['objective'] = model.ObjVal
 
         # Build output schedule info
         for t_idx in range(num_tasks):
             t_id = tasks[t_idx]['TaskID']
-            task_end_time = solver.Value(end_task_vars[(t_idx)])
-            tardiness = max(0, task_end_time - tasks[t_idx]['DueDate'])
+            tardiness = T[t_idx].X
 
             machine_times = []
             for m_idx in machines:
-                start_time = solver.Value(start_task_per_machine_vars[(t_idx, m_idx)])
-                end_time = solver.Value(end_task_per_machine_vars[(t_idx, m_idx)])
+                start_time = x[t_idx, m_idx].X
+                end_time = x[t_idx, m_idx].X + times[t_idx][m_idx]
                 machine_times.append((m_idx, start_time, end_time))
 
             results['schedule'].append({
                 'task_id': t_id,
-                'finish_time': task_end_time,
                 'tardiness': tardiness,
                 'machine_times': machine_times
             })
@@ -236,9 +218,9 @@ def main():
             status = results['status']
             objective = results['objective']
             schedule = results['schedule']
-            print("schedule:", schedule)
+            #print("schedule:", schedule)
 
-            if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+            if status in [GRB.OPTIMAL, GRB.SUBOPTIMAL]:
                 st.success(f"Solution found. Total Weighted Tardiness = {objective}")
 
                 # Display a Gantt chart
