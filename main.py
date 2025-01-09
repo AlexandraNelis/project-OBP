@@ -42,9 +42,9 @@ def solve_scheduling_problem(df, machine_columns):
     # Define horizon as sum of all processing times (a crude upper bound)
     horizon = sum(sum(t_row) for t_row in times)
 
-    x = model.addVars(jobs, machines, vtype=GRB.INTEGER, name="x")  # Start times
-    z1 = model.addVars(machines, machines, jobs, vtype=GRB.BINARY, name="z")  # Binary variables
-    z = model.addVars(jobs, jobs, machines, vtype=GRB.BINARY, name="z")  # Binary variables
+    x = model.addVars(jobs, machines, vtype=GRB.INTEGER, name="x")  # Start times for a job at a given machine
+    z1 = model.addVars(machines, machines, jobs, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed at machine i before machine j)
+    z = model.addVars(jobs, jobs, machines, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed before job i at machine k)
     T = model.addVars(jobs, vtype=GRB.INTEGER, name="T")  # Tardiness for each job
 
     model.setObjective(quicksum(tasks[j]['Weight'] * T[j] for j in jobs), GRB.MINIMIZE)
@@ -64,7 +64,7 @@ def solve_scheduling_problem(df, machine_columns):
         for i in jobs:
             for j in jobs:
                 if i < j:  # Avoid duplicate pairs
-                    # Disjunctive constraints
+                    # Disjunctive constraints(the same machine can not process simultaneously multiple machines)
                     model.addConstr(
                         x[i, k] + times[i][k] <= x[j, k] + horizon * (1 - z[i, j, k]),
                         name=f"job_{i}_before_{j}_on_machine_{k}"
@@ -78,7 +78,7 @@ def solve_scheduling_problem(df, machine_columns):
         for i in machines:
             for j in machines:
                 if i < j:  # Avoid duplicate pairs
-                    # Disjunctive constraints
+                    # Disjunctive constraints (the same job can not be processed simultaneously by multiple machines)
                     model.addConstr(
                         x[k, i] + times[k][i] <= x[k, j] + horizon * (1 - z1[i, j, k]),
                         name=f"job_{i}_before_{j}_on_machine_{k}"
