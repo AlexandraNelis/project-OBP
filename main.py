@@ -146,19 +146,27 @@ def solve_scheduling_problem(df, machine_columns):
     return results
 
 
-def create_gantt_chart(schedule):
+def create_gantt_chart(schedule, input_data):
     """
     Create a Gantt chart using Altair to ensure task lines are displayed properly.
     """
     chart_data = []
     for entry in schedule:
         task_id = entry['task_id']
+        tardiness = entry['tardiness']
+        release_date = input_data.loc[input_data['TaskID'] == task_id, 'ReleaseDate'].values[0]
+        due_date = input_data.loc[input_data['TaskID'] == task_id, 'DueDate'].values[0]
+        
         for (machine_num, start, end) in entry['machine_times']:
             chart_data.append({
                 'Task': f"Task {task_id}",
                 'Machine': f"M{machine_num}",
                 'Start': start,
-                'Finish': end
+                'Finish': end,
+                'Tardiness': tardiness,
+                'ReleaseDate': release_date,
+                'DueDate': due_date,
+                'TaskID': task_id,  # Add TaskID for clarity in the tooltip
             })
     df_gantt = pd.DataFrame(chart_data)
 
@@ -167,14 +175,23 @@ def create_gantt_chart(schedule):
         x=alt.X('Start:Q', title='Start Time'),
         x2=alt.X2('Finish:Q'),
         y=alt.Y('Machine:N', sort='-x', title='Machine'),
-        color='Task:N',
-        tooltip=['Task', 'Machine', 'Start', 'Finish']
+        color='Task:N',  # Color bars by task
+        tooltip=[  # Add all relevant data to the tooltip
+            'Task:N',
+            'Start:Q',
+            'Finish:Q',
+            'Tardiness:Q',
+            'ReleaseDate:Q',
+            'DueDate:Q'
+        ]
     ).properties(
         title="Schedule Gantt Chart",
         width=800,
         height=400
     )
     return chart
+
+
 
 def schedule_to_dataframe(schedule):
     """
@@ -353,7 +370,7 @@ def main():
 
                 # Display results in an expandable container
                 with st.expander("📊 Gantt Chart", expanded=True):
-                    fig_gantt = create_gantt_chart(schedule)
+                    fig_gantt = create_gantt_chart(schedule, df)
                     st.altair_chart(fig_gantt, use_container_width=True)
 
                 with st.expander("📝 Detailed Schedule"):
