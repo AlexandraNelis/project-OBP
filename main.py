@@ -53,8 +53,8 @@ def solve_scheduling_problem(df, machine_columns):
     # Constraints
     for i in jobs:
         for k in machines:
-            # Start times must be non-negative
-            model.addConstr(x[i, k] >= 0, name=f"start_time_nonneg_{i}_{k}")
+            # Start times must be later than the release date
+            model.addConstr(x[i, k] >= tasks[i]['ReleaseDate'], name=f"start_time_nonneg_{i}_{k}")
             # Precedence constraint
             model.addConstr(x[i, k] >= 0, name=f"start_time_nonneg_{i}_{k}")
             # Tardiness
