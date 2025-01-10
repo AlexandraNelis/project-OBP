@@ -160,7 +160,7 @@ def create_gantt_chart(schedule, input_data):
         for (machine_num, start, end) in entry['machine_times']:
             chart_data.append({
                 'Task': f"Task {task_id}",
-                'Machine': f"M{machine_num}",
+                'Machine': f"M{machine_num +1}",
                 'Start': start,
                 'Finish': end,
                 'Tardiness': tardiness,
