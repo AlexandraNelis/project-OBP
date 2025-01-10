@@ -362,7 +362,6 @@ def main():
             # Solve the scheduling problem
             with st.spinner("Solving the scheduling problem..."):
                 machine_columns = [c[0] + c[-1] + "Time" for c in machine_columns]
-                print(machine_columns)
                 results = solve_scheduling_problem(df, machine_columns)
                 status = results["status"]
                 objective = results["objective"]
