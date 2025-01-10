@@ -123,7 +123,8 @@ def solve_scheduling_problem(df, machine_columns):
 
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         results['objective'] = solver.ObjectiveValue()
-
+        if status ==cp_model.OPTIMAL:
+            print(f'status is Optimal')
         # Build output schedule info
         for t_idx in range(num_tasks):
             t_id = tasks[t_idx]['TaskID']
@@ -213,7 +214,7 @@ def schedule_to_dataframe(schedule):
             })
     return pd.DataFrame(rows)
 
-def validate_schedule(schedule, input_data, machine_columns):
+def validate_schedule(schedule, input_data, machine_columns,status):
     """
     Validate the given schedule based on the constraints.
 
@@ -294,6 +295,11 @@ def validate_schedule(schedule, input_data, machine_columns):
     else:
         results["correct_processing_time"] = (True, "All tasks have the correct processing time on each machine.")
 
+    #5 check if it is the optimal solution 
+    if status == 4:
+        results["Optimal solution"] = (True, "This is the optimal solution")
+    else:
+        results["Optimal solution"] = (False, "This is a feasible solution but not the optimal solution")
     return results
 
 
@@ -345,7 +351,6 @@ def main():
         st.dataframe(df, use_container_width=True)
 
         # Detect machine columns automatically
-        possible_machine_cols = [c for c in df.columns if c.upper().startswith("M") and c.upper().endswith("TIME")]
         possible_machines_names = ["Machine " + c[1]  for c in df.columns if c.upper().startswith("M") and c.upper().endswith("TIME")]
         
         # Add a section to configure machine columns in the sidebar
@@ -380,7 +385,7 @@ def main():
                     st.dataframe(results_df, use_container_width=True)
 
                 with st.expander("✅ Validation Results"):
-                    validation_results = validate_schedule(schedule, df, machine_columns)
+                    validation_results = validate_schedule(schedule, df, machine_columns,status)
                     for constraint, (is_satisfied, message) in validation_results.items():
                         if is_satisfied:
                             st.markdown(f"- **{constraint.replace('_', ' ').capitalize()}**: Satisfied ✅")
