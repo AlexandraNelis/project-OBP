@@ -316,7 +316,7 @@ def main():
                - **ReleaseDate**
                - **DueDate**
                - **Weight**
-               - **M1Time**, **M2Time**, etc. (processing times on each machine)
+               - **Machine 1**, **Machine 2**, etc. (processing times on each machine)
             2. Configure detected machine columns in the sidebar.
             3. Click **Solve** to optimize the schedule.
             4. Review results, validation, and download the schedule.
@@ -346,20 +346,23 @@ def main():
 
         # Detect machine columns automatically
         possible_machine_cols = [c for c in df.columns if c.upper().startswith("M") and c.upper().endswith("TIME")]
-
+        possible_machines_names = ["Machine " + c[1]  for c in df.columns if c.upper().startswith("M") and c.upper().endswith("TIME")]
+        
         # Add a section to configure machine columns in the sidebar
         with st.sidebar:
             st.markdown("### 🏗️ Configure Machine Columns")
             machine_columns = st.multiselect(
                 "Select Machine Columns (in order):",
-                possible_machine_cols,
-                default=possible_machine_cols
+                possible_machines_names,
+                default=possible_machines_names
             )
             st.markdown("---")
 
         if st.button("🔍 Solve Scheduling Problem"):
             # Solve the scheduling problem
             with st.spinner("Solving the scheduling problem..."):
+                machine_columns = [c[0] + c[-1] + "Time" for c in machine_columns]
+                print(machine_columns)
                 results = solve_scheduling_problem(df, machine_columns)
                 status = results["status"]
                 objective = results["objective"]
