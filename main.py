@@ -123,6 +123,7 @@ def solve_scheduling_problem(df, machine_columns):
 
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         results['objective'] = solver.ObjectiveValue()
+
         # Build output schedule info
         for t_idx in range(num_tasks):
             t_id = tasks[t_idx]['TaskID']
