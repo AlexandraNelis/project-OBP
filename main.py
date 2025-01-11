@@ -155,12 +155,12 @@ def generate_test_case(num_jobs, num_machines):
     """
     data = {
         "TaskID": list(range(1, num_jobs + 1)),
-        "ReleaseDate": np.random.randint(0, 50, size=num_jobs),  # Random release dates
-        "DueDate": np.random.randint(60, 120, size=num_jobs),    # Random due dates
-        "Weight": np.random.randint(1, 10, size=num_jobs),       # Random weights
+        "ReleaseDate": np.random.randint(0, 10, size=num_jobs),  # Random release dates
+        "DueDate": np.random.randint(20, 50, size=num_jobs),    # Random due dates
+        "Weight": np.random.randint(1, 5, size=num_jobs),       # Random weights
     }
     for i in range(1, num_machines + 1):
-        data[f"Machine {i}"] = np.random.randint(5, 20, size=num_jobs)  # Random processing times
+        data[f"Machine {i}"] = np.random.randint(1, 5, size=num_jobs)  # Random processing times
 
     return pd.DataFrame(data)
 
@@ -169,12 +169,15 @@ def evaluate_solver():
     Run the solver with increasing job and machine sizes, and record results.
     """
     results = []
-    max_jobs = 50  # Maximum number of jobs to test
-    max_machines = 10  # Maximum number of machines to test
+    max_jobs = 100  # Maximum number of jobs to test
+    max_machines = 20  # Maximum number of machines to test
     time_limit = 60  # Time limit in seconds
-
-    for num_jobs in range(10, max_jobs + 1, 10):  # Increment jobs by 10
-        for num_machines in range(2, max_machines + 1):  # Increment machines by 1
+    largest_set_of_jobs = {}
+      
+    for num_machines in range(2, max_machines + 1): # Increment machines by 1
+        best_job = 0
+        largest_set_of_jobs[num_machines]=best_job        
+        for num_jobs in range(2, max_jobs + 1, 2):# Increment jobs by 10 
             st.write(f"Testing with {num_jobs} jobs and {num_machines} machines...")
             df = generate_test_case(num_jobs, num_machines)
 
@@ -194,18 +197,28 @@ def evaluate_solver():
                 "SolverStatus": result["status"],
                 "ObjectiveValue": result["objective"],
                 "SolveTime": end_time - start_time,
-                "TimeCapped": end_time - start_time >= time_limit,
+                "TimeCapped": end_time - start_time >= time_limit
             })
+            if  results[-1]['SolveTime']<=60:
+                best_job = num_jobs
+            largest_set_of_jobs[num_machines] = best_job
+            if len(results)>1:
+                if results[-2]['TimeCapped'] and  results[-1]['TimeCapped']:
+                    st.write(f"No improvement")
+                    break
+            
 
-    return pd.DataFrame(results)
+    return pd.DataFrame(results),pd.DataFrame(list(largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"])
 
 # Run and display the evaluation results
 if st.button("Run Solver Performance Tests"):
     with st.spinner("Running tests..."):
-        performance_results = evaluate_solver()
+        performance_results,largest_set = evaluate_solver()
         st.markdown("### Performance Results")
         st.dataframe(performance_results)
-
+        st.markdown("### Largest number of jobs per machine")
+        st.dataframe(largest_set)
+        st.bar_chart(largest_set, x = 'Number of machines', y = 'Number of jobs', x_label= "number of machines", y_label= "number of jobs")
         # Optionally save results to a CSV
         csv_data = performance_results.to_csv(index=False).encode("utf-8")
         st.download_button(
