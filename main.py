@@ -5,6 +5,7 @@ import plotly.express as px
 import io
 import altair as alt
 import time
+from itertools import combinations
 
 import gurobipy as gp
 from gurobipy import Model, GRB, quicksum
@@ -30,7 +31,7 @@ def solve_scheduling_problem(df, machine_columns):
     model = gp.Model("WeightedTardinessScheduling")
 
     num_tasks = len(tasks)
-    jobs = list(range(num_tasks))
+    jobs = list(range(num_tasks)) # e.g. [0,1,2] if there are 3 jobs
     machines = list(range(len(machine_columns)))  # e.g. [0,1,2] if there are 3 machine columns
 
     # Build a 2D list for processing times: times[task_idx][machine_idx]
@@ -39,9 +40,14 @@ def solve_scheduling_problem(df, machine_columns):
     # Define horizon as sum of all processing times (a crude upper bound)
     horizon = sum(sum(t_row) for t_row in times)
 
+
     x = model.addVars(jobs, machines, vtype=GRB.INTEGER, name="x")  # Start times for a job at a given machine
-    z1 = model.addVars(machines, machines, jobs, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed at machine i before machine j)
-    z = model.addVars(jobs, jobs, machines, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed before job i at machine k)
+
+    #z = model.addVars(jobs,jobs, machines, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed before job i at machine k)
+    #z1 = model.addVars(machines, machines, jobs, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed at machine i before machine j)
+
+    z = model.addVars(combinations(jobs, 2), machines, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed before job i at machine k)
+    z1 = model.addVars(combinations(machines, 2), jobs, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed at machine i before machine j)
     T = model.addVars(jobs, lb = 0, vtype=GRB.INTEGER, name="T")  # Tardiness for each job
 
     model.setObjective(quicksum(tasks[j]['Weight'] * T[j] for j in jobs), GRB.MINIMIZE)
