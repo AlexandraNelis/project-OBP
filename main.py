@@ -135,7 +135,7 @@ def extract_solution(solver, tasks, machines, variables, times):
         tardiness = max(0, task_end_time - task['DueDate'])
         machine_times = [
         # Increment machine index by 1 for display purposes
-        (m_idx + 1,  # Machine number starts from 1
+        (m_idx + 1,
          solver.Value(variables['start'][(t_idx, m_idx)]),  # Start time from the solver
          solver.Value(variables['start'][(t_idx, m_idx)]) + times[t_idx][m_idx])  # End time calculated as start + processing time
         for m_idx in machines
@@ -166,7 +166,7 @@ def create_gantt_chart(schedule, input_data):
         for (machine_num, start, end) in entry['machine_times']:
             chart_data.append({
                 'Task': f"Task {task_id}",
-                'Machine': f"M{machine_num +1}",
+                'Machine': f"M{machine_num}",
                 'Start': start,
                 'Finish': end,
                 'Tardiness': tardiness,
@@ -288,7 +288,7 @@ def validate_schedule(schedule, input_data, machine_columns,status):
     for task in schedule:
         task_id = task["task_id"]
         for machine_num, start_time, end_time in task["machine_times"]:
-            expected_duration = input_data.loc[input_data["TaskID"] == task_id, machine_columns[machine_num]].values[0]
+            expected_duration = input_data.loc[input_data["TaskID"] == task_id, machine_columns[machine_num-1]].values[0]
             actual_duration = end_time - start_time
             if actual_duration != expected_duration:
                 processing_time_violations.append(
