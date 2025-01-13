@@ -286,7 +286,9 @@ def validate_schedule(schedule, input_data, machine_columns,status):
     # 3. Check that each task goes through all machines
     machines_visited_violations = []
     for task in schedule:
-        machine_times = [machine_num for machine_num, _, _ in task["machine_times"]]
+        machine_times = [machine_num-1 for machine_num, _, _ in task["machine_times"]]
+        print(sorted(machine_times))
+        print(sorted(range(len(machine_columns))))
         if sorted(machine_times) != sorted(range(len(machine_columns))):
             machines_visited_violations.append(
                 f"Task {task['task_id']} does not go through all machines (expected {len(machine_columns)} machines)."
