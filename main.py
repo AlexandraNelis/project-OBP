@@ -145,7 +145,8 @@ def extract_solution(solver, tasks, machines, variables, times):
             'task_id': task['TaskID'],
             'finish_time': task_end_time,
             'tardiness': tardiness,
-            'machine_times': machine_times
+            'machine_times': machine_times,
+            'weight': task['Weight']
         })
     
     return schedule
@@ -153,13 +154,15 @@ def extract_solution(solver, tasks, machines, variables, times):
 
 def create_gantt_chart(schedule, input_data):
     """
-    Create a Gantt chart using Altair to ensure task lines are displayed properly.
+    Create a Gantt chart using Altair.
+    The chart includes an interactive legend to highlight tasks.
     """
 
     chart_data = []
     for entry in schedule:
         task_id = entry['task_id']
         tardiness = entry['tardiness']
+        weight = entry.get('weight', 1)
         release_date = input_data.loc[input_data['TaskID'] == task_id, 'ReleaseDate'].values[0]
         due_date = input_data.loc[input_data['TaskID'] == task_id, 'DueDate'].values[0]
         
@@ -172,32 +175,43 @@ def create_gantt_chart(schedule, input_data):
                 'Tardiness': tardiness,
                 'ReleaseDate': release_date,
                 'DueDate': due_date,
-                'TaskID': task_id,  # Add TaskID for clarity in the tooltip
+                'Weight': weight,
+                'TaskID': task_id,
             })
     df_gantt = pd.DataFrame(chart_data)
 
-    # Use Altair to ensure task lines are properly displayed
+    selection = alt.selection_multi(fields=['Task'], bind='legend')
+
     chart = alt.Chart(df_gantt).mark_bar().encode(
         x=alt.X('Start:Q', title='Start Time'),
         x2=alt.X2('Finish:Q'),
         y=alt.Y('Machine:N', sort='-x', title='Machine'),
-        color='Task:N',  # Color bars by task
-        tooltip=[  # Add all relevant data to the tooltip
+        color=alt.Color(
+            'Task:N',
+            title='Task',
+            sort=alt.EncodingSortField(
+                field='TaskID', 
+                order='ascending'
+            )
+        ),
+        opacity=alt.condition(selection, alt.value(1), alt.value(0.2)),  # Dim non-selected tasks
+        tooltip=[
             'Task:N',
             'Start:Q',
             'Finish:Q',
-            'Tardiness:Q',
             'ReleaseDate:Q',
-            'DueDate:Q'
+            'DueDate:Q',
+            'Tardiness:Q',
+            'Weight:Q'
         ]
     ).properties(
         title="Schedule Gantt Chart",
         width=800,
         height=400
+    ).add_selection(
+        selection
     )
     return chart
-
-
 
 def schedule_to_dataframe(schedule):
     """
@@ -318,49 +332,44 @@ def main():
 
     # Add a sidebar for navigation and instructions
     with st.sidebar:
-        st.title("⚙️ Settings")
+        st.title("Upload task data")
         st.markdown(
             """
-            **Instructions**:
-            1. Upload an Excel file with the following columns:
+            1. Upload an Excel file (.xlsx) with the following columns:
                - **TaskID** (unique identifier)
                - **ReleaseDate**
                - **DueDate**
                - **Weight**
-               - **Machine1Time**, **Machine2Time**, etc. (processing times on each machine)
-            2. Configure detected machine columns in the sidebar.
-            3. Click **Solve** to optimize the schedule.
-            4. Review results, validation, and download the schedule.
+               - **Machine1Time**, **Machine2Time**, etc.  \n
+                  *(processing times on each machine)*
+            2. Configure detected machine columns below.
+            3. Click **Solve Scheduling Problem** to optimize the schedule.
             """
         )
-        st.markdown("---")
         st.info("Ensure your file follows the required format to avoid errors.")
+        uploaded_file = st.file_uploader("", type=["xlsx"])
 
     # Title and description in the main layout
-    st.title("📅 Multi-Machine Scheduling Optimizer")
+    st.title("Multi-Machine Scheduling Optimizer")
     st.markdown(
         """
-        Optimize your multi-machine scheduling tasks to minimize total **weighted tardiness**.
+        Optimize your multi-machine scheduling tasks to minimize total **weighted tardiness**.  \n
         Use the **sidebar** to upload data and configure settings.
         """
     )
 
-    # File uploader
-    st.markdown("### Upload Your Excel File")
-    uploaded_file = st.file_uploader("Upload an Excel file", type=["xlsx"])
-
     if uploaded_file is not None:
         # Read and display input data
         df = pd.read_excel(uploaded_file)
-        st.markdown("### 📋 Input Data Preview")
-        st.dataframe(df, use_container_width=True)
+        st.markdown("### Input Data Preview")
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
         # Detect machine columns automatically
         possible_machines_names = ["Machine " + c[1]  for c in df.columns if c.upper().startswith("M") and c.upper().endswith("TIME")]
         
         # Add a section to configure machine columns in the sidebar
         with st.sidebar:
-            st.markdown("### 🏗️ Configure Machine Columns")
+            st.markdown("### Configure Machine Columns")
             machine_columns = st.multiselect(
                 "Select Machine Columns (in order):",
                 possible_machines_names,
@@ -368,7 +377,7 @@ def main():
             )
             st.markdown("---")
 
-        if st.button("🔍 Solve Scheduling Problem"):
+        if st.button("Solve Scheduling Problem"):
             # Solve the scheduling problem
             with st.spinner("Solving the scheduling problem..."):
                 machine_columns = [c[0] + c[-1] + "Time" for c in machine_columns]
@@ -378,18 +387,18 @@ def main():
                 schedule = results["schedule"]
 
             if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-                st.success(f"Solution found! Total Weighted Tardiness = {objective:.2f}")
+                st.success(f"Solution found! Total Weighted Tardiness = {objective:.1f}")
 
                 # Display results in an expandable container
-                with st.expander("📊 Gantt Chart", expanded=True):
+                with st.expander("Gantt Chart", expanded=True):
                     fig_gantt = create_gantt_chart(schedule, df)
                     st.altair_chart(fig_gantt, use_container_width=True)
 
-                with st.expander("📝 Detailed Schedule"):
+                with st.expander("Detailed Schedule"):
                     results_df = schedule_to_dataframe(schedule)
                     st.dataframe(results_df, use_container_width=True)
 
-                with st.expander("✅ Validation Results"):
+                with st.expander("Validation Results"):
                     validation_results = validate_schedule(schedule, df, machine_columns,status)
                     for constraint, (is_satisfied, message) in validation_results.items():
                         if is_satisfied:
@@ -399,7 +408,7 @@ def main():
                             st.text(f"    {message}")
 
                 # Add download button for schedule
-                st.markdown("### 📥 Download Solution")
+                st.markdown("### Download Solution")
                 output_bytes = io.BytesIO()
                 with pd.ExcelWriter(output_bytes, engine="openpyxl") as writer:
                     results_df.to_excel(writer, index=False, sheet_name="Schedule")
