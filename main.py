@@ -388,6 +388,16 @@ def main():
             st.error(f"Unexpected columns found in the file: {', '.join(unexpected_columns)}")
             return
 
+        # Check for empty cells
+        if df.isnull().values.any():
+            empty_cells = df[df.isnull().any(axis=1)]
+            styled_df = empty_cells.style.applymap(lambda x: 'background-color: rgba(255, 0, 0, 0.6)' if pd.isnull(x) else '')
+
+            st.error("The uploaded file contains empty cells. Please fill in the missing values. Affected rows are displayed below.")
+            st.markdown("### Rows with Missing Values")
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            return
+
         # Detect machine columns automatically
         possible_machines_names = [f"Machine {col[1]}" for col in possible_machine_columns]
 
@@ -403,6 +413,7 @@ def main():
                 default=possible_machines_names
             )
             st.markdown("---")
+
 
         if st.button("Solve Scheduling Problem"):
             # Solve the scheduling problem
@@ -423,7 +434,7 @@ def main():
 
                 with st.expander("Detailed Schedule"):
                     results_df = schedule_to_dataframe(schedule)
-                    st.dataframe(results_df, use_container_width=True)
+                    st.dataframe(results_df, use_container_width=True, hide_index=True)
 
                 with st.expander("Validation Results"):
                     validation_results = validate_schedule(schedule, df, machine_columns,status)
