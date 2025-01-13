@@ -223,10 +223,12 @@ def schedule_to_dataframe(schedule):
     for entry in schedule:
         t_id = entry['task_id']
         t_tardiness = entry['tardiness']
+        t_weight = entry['weight']
         for (m_num, s, f) in entry['machine_times']:
             rows.append({
                 'TaskID': t_id,
-                'Machine': m_num,  # Display machine numbers starting from 1
+                'Weight': t_weight,
+                'Machine': m_num,
                 'Start': s,
                 'Finish': f,
                 'Tardiness': t_tardiness if m_num == entry['machine_times'][-1][0] else 0
@@ -287,8 +289,6 @@ def validate_schedule(schedule, input_data, machine_columns,status):
     machines_visited_violations = []
     for task in schedule:
         machine_times = [machine_num-1 for machine_num, _, _ in task["machine_times"]]
-        print(sorted(machine_times))
-        print(sorted(range(len(machine_columns))))
         if sorted(machine_times) != sorted(range(len(machine_columns))):
             machines_visited_violations.append(
                 f"Task {task['task_id']} does not go through all machines (expected {len(machine_columns)} machines)."
@@ -361,14 +361,39 @@ def main():
     )
 
     if uploaded_file is not None:
-        # Read and display input data
-        df = pd.read_excel(uploaded_file)
+        try:
+            # Read and display input data
+            df = pd.read_excel(uploaded_file)
+        except Exception as e:
+            st.error(f"Error reading the file: {e}")
+            return
+
+        # Convert column names to strings for validation
+        df.columns = df.columns.map(str)
+
+        # Define required and machine columns
+        required_columns = {"TaskID", "ReleaseDate", "DueDate", "Weight"}
+        possible_machine_columns = [col for col in df.columns if col.upper().startswith("M") and col.upper().endswith("TIME")]
+
+        # Validate required columns
+        missing_columns = required_columns - set(df.columns)
+        if missing_columns:
+            st.error(f"Missing required columns: {', '.join(missing_columns)}")
+            return
+
+        # Check for unexpected columns
+        expected_columns = required_columns.union(possible_machine_columns)
+        unexpected_columns = set(df.columns) - expected_columns
+        if unexpected_columns:
+            st.error(f"Unexpected columns found in the file: {', '.join(unexpected_columns)}")
+            return
+
+        # Detect machine columns automatically
+        possible_machines_names = [f"Machine {col[1]}" for col in possible_machine_columns]
+
         st.markdown("### Input Data Preview")
         st.dataframe(df, use_container_width=True, hide_index=True)
 
-        # Detect machine columns automatically
-        possible_machines_names = ["Machine " + c[1]  for c in df.columns if c.upper().startswith("M") and c.upper().endswith("TIME")]
-        
         # Add a section to configure machine columns in the sidebar
         with st.sidebar:
             st.markdown("### Configure Machine Columns")
