@@ -327,7 +327,7 @@ def main():
                - **ReleaseDate**
                - **DueDate**
                - **Weight**
-               - **Machine 1**, **Machine 2**, etc. (processing times on each machine)
+               - **Machine1Time**, **Machine2Time**, etc. (processing times on each machine)
             2. Configure detected machine columns in the sidebar.
             3. Click **Solve** to optimize the schedule.
             4. Review results, validation, and download the schedule.
