@@ -6,6 +6,7 @@ import io
 import altair as alt
 import time
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 def solve_scheduling_problem(df, machine_columns):
@@ -167,8 +168,8 @@ def evaluate_solver():
     Run the solver with increasing job and machine sizes, and record results.
     """
     results = []
-    max_jobs = 100  # Maximum number of jobs to test
-    max_machines = 20  # Maximum number of machines to test
+    max_jobs = 10  # Maximum number of jobs to test
+    max_machines = 2  # Maximum number of machines to test
     time_limit = 60  # Time limit in seconds
     largest_set_of_jobs = {}
     batch = 5
@@ -220,28 +221,49 @@ def evaluate_solver():
                     break          
     return pd.DataFrame(results),pd.DataFrame(list(largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"])
 
+
+def download_something(title,data,name,mime):
+            st.download_button(
+            label=title,
+            data=data,
+            file_name=name,
+            mime=mime,
+        )
+            
+performance_results ={}
 # Run and display the evaluation results
 if st.button("Run Solver Performance Tests"):
     with st.spinner("Running tests..."):
         performance_results,largest_set = evaluate_solver()
         st.markdown("### Performance Results")
         st.dataframe(performance_results)
-        st.markdown("### Largest number of jobs per machine")
-        st.dataframe(largest_set)
-        st.bar_chart(largest_set, x = 'Number of machines', y = 'Number of jobs', x_label= "number of machines", y_label= "number of jobs")
-        # Optionally save results to a CSV
-        csv_data = performance_results.to_csv(index=False).encode("utf-8")
-        largest_set_data = largest_set.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="Download Full Performance Results",
-            data=csv_data,
-            file_name="solver_full_performance_results.csv",
-            mime="text/csv"
-        )
+        
+if st.button(f"test"):
+    st.write("surpriseee")
+    csv_data = performance_results.to_csv(index=False).encode("utf-8")
+    download_something("Download Full Performance Results",csv_data,"solver_full_performance_results.csv","text/csv")
 
-        st.download_button(
-            label="Download Performance Results",
-            data=largest_set_data,
-            file_name="solver_performance_results.csv",
-            mime="text/csv"
-        )
+    st.markdown("### Largest number of jobs per machine")
+    bob = st.dataframe(largest_set)
+    st.bar_chart(largest_set, x = 'Number of machines', y = 'Number of jobs', x_label= "number of machines", y_label= "number of jobs")
+    graph_data =largest_set.set_index('Number of machines')
+    fig, ax = plt.subplots()
+    graph_data.plot(kind="bar", ax=ax, legend=False)
+    ax.set_title("Maximum number of jobs solvable for number of machines")
+    ax.set_xlabel("Number of machines")
+    ax.set_ylabel("Number of jobs")
+
+    # Save the chart to a buffer for downloading
+    buffer = io.BytesIO()
+    fig.savefig(buffer, format="png")
+    buffer.seek(0)
+    
+    
+    # Optionally save results to a CSV
+    largest_set_data = largest_set.to_csv(index=False).encode("utf-8")
+    
+# Use a fragment to prevent reruns
+
+download_something("Download  Performance Results",largest_set_data,"solver_performance_results.csv","text/csv")
+download_something("Download Bar Chart as PNG",buffer,"bar_chart.png","image/png")
+
