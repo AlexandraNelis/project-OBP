@@ -109,6 +109,7 @@ def solve_scheduling_problem(df, machine_columns):
 
     # Solve
     solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 60.0
     start_time = time.time()
     status = solver.Solve(model)
     end_time = time.time()
