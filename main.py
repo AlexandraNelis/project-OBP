@@ -183,6 +183,7 @@ def evaluate_solver():
             Time_capped = False
 
             for i in range(batch):#uneven number so the ratio will always tip to one side
+                st.write(f"trial {i+1}")
                 machine_columns = [f"Machine {i}" for i in range(1, num_machines + 1)]
                 start_time = time.time()
                 result = solve_scheduling_problem(df, machine_columns)
@@ -190,8 +191,10 @@ def evaluate_solver():
                 solving_time =  end_time - start_time
                 if solving_time >= time_limit:
                     solving_set.append((result,False,solving_time))
+                    st.write(f"Not in time")
                 else:
                     solving_set.append((result,True,solving_time))
+                    st.write(f"Within time")
 
             false_count = sum(1 for _, is_false, _ in solving_set if not is_false)
             solving_set.sort(key=lambda x: not x[1])
@@ -212,6 +215,7 @@ def evaluate_solver():
             largest_set_of_jobs[num_machines] = best_job
             if len(results)>1:
                 if results[-2]['TimeCapped'] and  results[-1]['TimeCapped']:
+                    print("no improvement")
                     st.write(f"No improvement")
                     break          
     return pd.DataFrame(results),pd.DataFrame(list(largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"])
@@ -227,9 +231,17 @@ if st.button("Run Solver Performance Tests"):
         st.bar_chart(largest_set, x = 'Number of machines', y = 'Number of jobs', x_label= "number of machines", y_label= "number of jobs")
         # Optionally save results to a CSV
         csv_data = performance_results.to_csv(index=False).encode("utf-8")
+        largest_set_data = largest_set.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="Download Full Performance Results",
+            data=csv_data,
+            file_name="solver_full_performance_results.csv",
+            mime="text/csv"
+        )
+
         st.download_button(
             label="Download Performance Results",
-            data=csv_data,
+            data=largest_set_data,
             file_name="solver_performance_results.csv",
             mime="text/csv"
         )
