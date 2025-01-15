@@ -146,134 +146,81 @@ def solve_scheduling_problem(df, machine_columns):
     return results
 
 
-def create_gantt_chart(schedule):
+def generate_test_case(num_jobs, num_machines):
     """
-    Create a Gantt chart using Altair to ensure task lines are displayed properly.
+    Generate a synthetic test case with the specified number of jobs and machines.
     """
-    chart_data = []
-    for entry in schedule:
-        task_id = entry['task_id']
-        for (machine_num, start, end) in entry['machine_times']:
-            chart_data.append({
-                'Task': f"Task {task_id}",
-                'Machine': f"M{machine_num}",
-                'Start': start,
-                'Finish': end
+    data = {
+        "TaskID": list(range(1, num_jobs + 1)),
+        "ReleaseDate": np.random.randint(0, 10, size=num_jobs),  # Random release dates
+        "DueDate": np.random.randint(20, 50, size=num_jobs),    # Random due dates
+        "Weight": np.random.randint(1, 5, size=num_jobs),       # Random weights
+    }
+    for i in range(1, num_machines + 1):
+        data[f"Machine {i}"] = np.random.randint(1, 5, size=num_jobs)  # Random processing times
+
+    return pd.DataFrame(data)
+
+def evaluate_solver():
+    """
+    Run the solver with increasing job and machine sizes, and record results.
+    """
+    results = []
+    max_jobs = 100  # Maximum number of jobs to test
+    max_machines = 20  # Maximum number of machines to test
+    time_limit = 60  # Time limit in seconds
+    largest_set_of_jobs = {}
+      
+    for num_machines in range(2, max_machines + 1): # Increment machines by 1
+        best_job = 0
+        largest_set_of_jobs[num_machines]=best_job        
+        for num_jobs in range(2, max_jobs + 1, 2):# Increment jobs by 10 
+            st.write(f"Testing with {num_jobs} jobs and {num_machines} machines...")
+            df = generate_test_case(num_jobs, num_machines)
+
+            # Solve the problem with a capped time limit
+            machine_columns = [f"Machine {i}" for i in range(1, num_machines + 1)]
+            solver = cp_model.CpSolver()
+            solver.parameters.max_time_in_seconds = time_limit  # Cap solver time
+
+            start_time = time.time()
+            result = solve_scheduling_problem(df, machine_columns)
+            end_time = time.time()
+
+            # Record performance
+            results.append({
+                "NumJobs": num_jobs,
+                "NumMachines": num_machines,
+                "SolverStatus": result["status"],
+                "ObjectiveValue": result["objective"],
+                "SolveTime": end_time - start_time,
+                "TimeCapped": end_time - start_time >= time_limit
             })
-    df_gantt = pd.DataFrame(chart_data)
+            if  results[-1]['SolveTime']<=60:
+                best_job = num_jobs
+            largest_set_of_jobs[num_machines] = best_job
+            if len(results)>1:
+                if results[-2]['TimeCapped'] and  results[-1]['TimeCapped']:
+                    st.write(f"No improvement")
+                    break
+            
 
-    # Use Altair to ensure task lines are properly displayed
-    chart = alt.Chart(df_gantt).mark_bar().encode(
-        x=alt.X('Start:Q', title='Start Time'),
-        x2=alt.X2('Finish:Q'),
-        y=alt.Y('Machine:N', sort='-x', title='Machine'),
-        color='Task:N',
-        tooltip=['Task', 'Machine', 'Start', 'Finish']
-    ).properties(
-        title="Schedule Gantt Chart",
-        width=800,
-        height=400
-    )
-    return chart
+    return pd.DataFrame(results),pd.DataFrame(list(largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"])
 
-def schedule_to_dataframe(schedule):
-    """
-    Convert the schedule list of dicts into a row-based DataFrame so it’s easy to export to Excel.
-    Each machine-time range becomes a separate row:
-      [TaskID, Machine, Start, Finish, Tardiness (only repeated for convenience)]
-    """
-    rows = []
-    for entry in schedule:
-        t_id = entry['task_id']
-        t_tardiness = entry['tardiness']
-        for (m_num, s, f) in entry['machine_times']:
-            rows.append({
-                'TaskID': t_id,
-                'Machine': m_num,
-                'Start': s,
-                'Finish': f,
-                'Tardiness': t_tardiness if m_num == entry['machine_times'][-1][0] else 0
-            })
-    return pd.DataFrame(rows)
-
-
-def main():
-    st.title("Multi-Machine Scheduling (Weighted Tardiness Minimization)")
-
-    st.write(
-        """
-        **Instructions**:  
-        1. Upload an Excel file with columns:
-           - **TaskID** (unique integer or label)
-           - **ReleaseDate**
-           - **DueDate**
-           - **Weight**
-           - **M1Time**, **M2Time**, **M3Time**, etc. (one column per machine)  
-        2. Click **Solve** to compute an optimal or feasible schedule.  
-        3. View the Gantt chart, schedule details, and **download** the solution.
-        """
-    )
-
-    # File uploader for real input data
-    uploaded_file = st.file_uploader("Upload an Excel file", type=["xlsx"])
-
-    if uploaded_file is not None:
-        df = pd.read_excel(uploaded_file)
-        st.write("### Input Data")
-        st.dataframe(df)
-
-        # Identify machine columns automatically (columns that start with "M" and end with "Time")
-        # Or you can specify them directly if you prefer.
-        possible_machine_cols = [c for c in df.columns if c.upper().startswith("M") and c.upper().endswith("TIME")]
-        st.write(f"**Detected machine time columns**: {possible_machine_cols}")
-
-        # Let user verify or override which columns are machine times
-        machine_columns = st.multiselect(
-            "Select Machine Columns (in order):",
-            possible_machine_cols,
-            default=possible_machine_cols
+# Run and display the evaluation results
+if st.button("Run Solver Performance Tests"):
+    with st.spinner("Running tests..."):
+        performance_results,largest_set = evaluate_solver()
+        st.markdown("### Performance Results")
+        st.dataframe(performance_results)
+        st.markdown("### Largest number of jobs per machine")
+        st.dataframe(largest_set)
+        st.bar_chart(largest_set, x = 'Number of machines', y = 'Number of jobs', x_label= "number of machines", y_label= "number of jobs")
+        # Optionally save results to a CSV
+        csv_data = performance_results.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="Download Performance Results",
+            data=csv_data,
+            file_name="solver_performance_results.csv",
+            mime="text/csv"
         )
-
-        if st.button("Solve Scheduling Problem"):
-            # Solve
-            results = solve_scheduling_problem(df, machine_columns)
-            status = results['status']
-            objective = results['objective']
-            schedule = results['schedule']
-            print("schedule:", schedule)
-
-            if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-                st.success(f"Solution found. Total Weighted Tardiness = {objective}")
-
-                # Display a Gantt chart
-                fig_gantt = create_gantt_chart(schedule)
-                st.altair_chart(fig_gantt, use_container_width=True)
-
-                # Display detailed schedule info
-                st.write("### Detailed Schedule")
-                results_df = schedule_to_dataframe(schedule)
-                st.dataframe(results_df)
-
-                # Download solution as Excel
-                output_bytes = io.BytesIO()
-                with pd.ExcelWriter(output_bytes, engine="openpyxl") as writer:
-                    results_df.to_excel(writer, index=False, sheet_name="Schedule")
-                    # Optionally include the input data in the same file:
-                    df.to_excel(writer, index=False, sheet_name="InputData")
-                output_bytes.seek(0)
-
-                st.download_button(
-                    label="Download Schedule as Excel",
-                    data=output_bytes,
-                    file_name="schedule_solution.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-            else:
-                st.error("No feasible solution found. Please check your input data.")
-    else:
-        st.info("Please upload an Excel file to begin.")
-
-
-if __name__ == "__main__":
-    main()
