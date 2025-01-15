@@ -43,7 +43,7 @@ def add_scheduling_constraints(model: cp_model.CpModel,
                              variables: Dict, 
                              times: List[List[int]]) -> None:
     """Add all scheduling constraints to the model."""
-    """1. No Overlap on Machines"""
+    #1. No Overlap on Machines
     for machine_idx in machines:
         machine_intervals = [
             variables['intervals'][(task_idx, machine_idx)] 
@@ -51,7 +51,7 @@ def add_scheduling_constraints(model: cp_model.CpModel,
         ]
         model.AddNoOverlap(machine_intervals)
     
-    """2. No task overlaps on the same machine"""
+    #2. No task overlaps on the same machine
     for task_idx, _ in enumerate(tasks):
         task_intervals = [
             variables['intervals'][(task_idx, machine_idx)] 
@@ -59,12 +59,12 @@ def add_scheduling_constraints(model: cp_model.CpModel,
         ]
         model.AddNoOverlap(task_intervals)
         
-        """3. Respect Release Dates"""
+        #3. Respect Release Dates
         for machine_idx in machines:
             model.Add(variables['start'][(task_idx, machine_idx)] >= 
                      tasks[task_idx]['ReleaseDate'])
         
-        """4. Correct End Times: end time for each task is its maximum end time for all the machines"""
+        #4. Correct End Times: end time for each task is its maximum end time for all the machines
         end_times_task = [
             variables['start'][(task_idx, machine_idx)] + times[task_idx][machine_idx]
             for machine_idx in machines
