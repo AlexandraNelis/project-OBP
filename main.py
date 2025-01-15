@@ -170,6 +170,7 @@ def evaluate_solver():
     max_machines = 20  # Maximum number of machines to test
     time_limit = 60  # Time limit in seconds
     largest_set_of_jobs = {}
+    batch = 5
       
     for num_machines in range(2, max_machines + 1): # Increment machines by 1
         best_job = 0
@@ -177,24 +178,33 @@ def evaluate_solver():
         for num_jobs in range(2, max_jobs + 1, 2):# Increment jobs by 10 
             st.write(f"Testing with {num_jobs} jobs and {num_machines} machines...")
             df = generate_test_case(num_jobs, num_machines)
+            solving_set=[]
+            Time_capped = False
 
-            # Solve the problem with a capped time limit
-            machine_columns = [f"Machine {i}" for i in range(1, num_machines + 1)]
-            solver = cp_model.CpSolver()
-            solver.parameters.max_time_in_seconds = time_limit  # Cap solver time
+            for i in range(batch):#uneven number so the ratio will always tip to one side
+                machine_columns = [f"Machine {i}" for i in range(1, num_machines + 1)]
+                start_time = time.time()
+                result = solve_scheduling_problem(df, machine_columns)
+                end_time = time.time()
+                solving_time =  end_time - start_time
+                if solving_time >= time_limit:
+                    solving_set.append((result,False,solving_time))
+                else:
+                    solving_set.append((result,True,solving_time))
 
-            start_time = time.time()
-            result = solve_scheduling_problem(df, machine_columns)
-            end_time = time.time()
-
+            false_count = sum(1 for _, is_false, _ in solving_set if not is_false)
+            solving_set.sort(key=lambda x: not x[1])
+            if false_count > batch/2:#more than half of the tries failed at the instance
+                Time_capped = True
+                solving_set.sort(key=lambda x: x[1])
             # Record performance
             results.append({
                 "NumJobs": num_jobs,
                 "NumMachines": num_machines,
-                "SolverStatus": result["status"],
-                "ObjectiveValue": result["objective"],
-                "SolveTime": end_time - start_time,
-                "TimeCapped": end_time - start_time >= time_limit
+                "SolverStatus": solving_set[0][0]["status"],
+                "ObjectiveValue": solving_set[0][0]["objective"],
+                "SolveTime": solving_set[0][2],
+                "TimeCapped": Time_capped
             })
             if  results[-1]['SolveTime']<=60:
                 best_job = num_jobs
@@ -202,9 +212,7 @@ def evaluate_solver():
             if len(results)>1:
                 if results[-2]['TimeCapped'] and  results[-1]['TimeCapped']:
                     st.write(f"No improvement")
-                    break
-            
-
+                    break          
     return pd.DataFrame(results),pd.DataFrame(list(largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"])
 
 # Run and display the evaluation results
