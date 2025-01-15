@@ -5,7 +5,7 @@ import plotly.express as px
 import io
 import altair as alt
 import time
-
+import numpy as np
 
 
 def solve_scheduling_problem(df, machine_columns):
