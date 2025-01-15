@@ -7,6 +7,7 @@ import altair as alt
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+import base64
 
 
 def solve_scheduling_problem(df, machine_columns):
@@ -222,48 +223,45 @@ def evaluate_solver():
     return pd.DataFrame(results),pd.DataFrame(list(largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"])
 
 
-def download_something(title,data,name,mime):
-            st.download_button(
-            label=title,
-            data=data,
-            file_name=name,
-            mime=mime,
-        )
-            
-performance_results ={}
+def create_download_link(val, filename,type):
+    if type=="png":
+        b64 = base64.b64encode(val).decode()  # Base64 encode the PNG file
+        return f'<a href="data:image/png;base64,{b64}" download="{filename}.{type}">Download image</a>'
+    else:
+        b64 = base64.b64encode(val)
+        return f'<a href="data:application/octet-stream;base64,{b64.decode()}" download="{filename}.{type}">Download {filename}</a>'
+
 # Run and display the evaluation results
 if st.button("Run Solver Performance Tests"):
     with st.spinner("Running tests..."):
         performance_results,largest_set = evaluate_solver()
         st.markdown("### Performance Results")
         st.dataframe(performance_results)
+        st.markdown("### Largest number of jobs per machine")
+        st.dataframe(largest_set)
+        st.bar_chart(largest_set, x = 'Number of machines', y = 'Number of jobs', x_label= "number of machines", y_label= "number of jobs")
+        graph_data =largest_set.set_index('Number of machines')
+        fig, ax = plt.subplots()
+        graph_data.plot(kind="bar", ax=ax, legend=False)
+        ax.set_title("Maximum number of jobs solvable for number of machines")
+        ax.set_xlabel("Number of machines")
+        ax.set_ylabel("Number of jobs")
+
+        # Save the chart to a buffer for downloading
+        buffer = io.BytesIO()
+        fig.savefig(buffer, format="png")
+        buffer.seek(0)
+        png_data= buffer.getvalue()
+
         
-if st.button(f"test"):
-    st.write("surpriseee")
-    csv_data = performance_results.to_csv(index=False).encode("utf-8")
-    download_something("Download Full Performance Results",csv_data,"solver_full_performance_results.csv","text/csv")
+        # Optionally save results to a CSV
+        csv_data = performance_results.to_csv(index=False).encode("utf-8")
+        largest_set_data = largest_set.to_csv(index=False).encode("utf-8")
+        performance_url = create_download_link(csv_data, 'Performance results',"csv")
+        largest_set_url =create_download_link(largest_set_data,"Largest jobset","csv")
+        graph_url = create_download_link(png_data,"Bar chart","png")
+        st.markdown(performance_url, unsafe_allow_html=True)
+        st.markdown(largest_set_url, unsafe_allow_html=True)
+        st.markdown(graph_url, unsafe_allow_html=True)
 
-    st.markdown("### Largest number of jobs per machine")
-    bob = st.dataframe(largest_set)
-    st.bar_chart(largest_set, x = 'Number of machines', y = 'Number of jobs', x_label= "number of machines", y_label= "number of jobs")
-    graph_data =largest_set.set_index('Number of machines')
-    fig, ax = plt.subplots()
-    graph_data.plot(kind="bar", ax=ax, legend=False)
-    ax.set_title("Maximum number of jobs solvable for number of machines")
-    ax.set_xlabel("Number of machines")
-    ax.set_ylabel("Number of jobs")
-
-    # Save the chart to a buffer for downloading
-    buffer = io.BytesIO()
-    fig.savefig(buffer, format="png")
-    buffer.seek(0)
-    
-    
-    # Optionally save results to a CSV
-    largest_set_data = largest_set.to_csv(index=False).encode("utf-8")
-    
-# Use a fragment to prevent reruns
-
-download_something("Download  Performance Results",largest_set_data,"solver_performance_results.csv","text/csv")
-download_something("Download Bar Chart as PNG",buffer,"bar_chart.png","image/png")
-
+        
