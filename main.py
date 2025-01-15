@@ -4,7 +4,7 @@ from ortools.sat.python import cp_model
 import io
 import altair as alt
 import time
-from typing import Dict, List, Tuple, Set, Optional
+from typing import Dict, List, Tuple
 
 
 def create_model_variables(model: cp_model.CpModel, 
