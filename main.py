@@ -1,279 +1,479 @@
 import streamlit as st
 import pandas as pd
 from ortools.sat.python import cp_model
-import plotly.express as px
 import io
 import altair as alt
 import time
+from typing import Dict, List, Tuple, Set, Optional
 
 
+def create_model_variables(model: cp_model.CpModel, 
+                         tasks: List[Dict], 
+                         machines: List[int], 
+                         machine_columns: List[str], 
+                         horizon: int) -> Tuple[Dict, List[List[int]]]:
+    """Create and return all model variables: the start and end times (and the corresponding interval duration) of tasks on machines,
+    with the list of processing times for each task on each machine given by the input"""
+    times = [[t[col] for col in machine_columns] for t in tasks]
+    variables = {
+        'start': {},
+        'intervals': {},
+        'task_end': {},
+    }    
+    for task_idx, _ in enumerate(tasks):
+        for machine_idx in machines:
+            duration = times[task_idx][machine_idx]
+            start_var = model.NewIntVar(0, horizon, f'start_{task_idx}_m{machine_idx}')
+            interval_var = model.NewIntervalVar(
+                start_var, duration, start_var + duration, 
+                f'interval_{task_idx}_m{machine_idx}'
+            )
+            variables['start'][(task_idx, machine_idx)] = start_var
+            variables['intervals'][(task_idx, machine_idx)] = interval_var
+        variables['task_end'][task_idx] = model.NewIntVar(
+            0, horizon, f'end_time_task{task_idx}'
+        )
+    
+    return variables, times
 
-def solve_scheduling_problem(df, machine_columns):
-    """
-    Given a DataFrame `df` with columns:
-      - 'TaskID' (unique identifier)
-      - 'ReleaseDate'
-      - 'DueDate'
-      - 'Weight'
-      - columns in `machine_columns` for processing times on each machine
 
-    Returns:
-      A dictionary containing:
-        - 'status': solver status
-        - 'objective': objective function value (sum of weighted tardiness)
-        - 'schedule': list of dicts describing the schedule, with fields:
-            'task_id', 'finish_time', 'tardiness', 'machine_times'
-    """
-    tasks = df.to_dict('records')
-    model = cp_model.CpModel()
-
-    num_tasks = len(tasks)
-    machines = list(range(len(machine_columns)))  # e.g. [0,1,2] if there are 3 machine columns
-
-    # Build a 2D list for processing times: times[task_idx][machine_idx]
-    times = []
-    for t in tasks:
-        row_times = [t[col] for col in machine_columns]
-        times.append(row_times)
-
-    # Define horizon as sum of all processing times (a crude upper bound)
-    horizon = sum(sum(t_row) for t_row in times)
-
-    # Create variables: start, end, interval
-    start_task_per_machine_vars = {}
-    end_task_per_machine_vars = {}
-    end_task_vars = {}
-    intervals = {}
-
-    for t_idx in range(num_tasks):
-        for m_idx in machines:
-            duration = times[t_idx][m_idx]
-            
-            start_task_per_machine_var = model.NewIntVar(0, horizon, f'start_{t_idx}_m{m_idx}')
-            end_task_per_machine_var = model.NewIntVar(0, horizon, f'end_{t_idx}_m{m_idx}')
-            interval_var = model.NewIntervalVar(start_task_per_machine_var, duration, end_task_per_machine_var,
-                                                f'interval_{t_idx}_m{m_idx}')
-
-            start_task_per_machine_vars[(t_idx, m_idx)] = start_task_per_machine_var
-            end_task_per_machine_vars[(t_idx, m_idx)] = end_task_per_machine_var
-            intervals[(t_idx, m_idx)] = interval_var
-
-        end_task_var = model.NewIntVar(0, horizon, f'end_time_task{t_idx}')
-        end_task_vars[(t_idx)] = end_task_var
-        
-
-    # Constraint 1: Ensure no 2 tasks overlap at the same machine
-    for m_idx in machines:
-        machine_intervals = [intervals[(t_idx, m_idx)] for t_idx in range(num_tasks)]
+def add_scheduling_constraints(model: cp_model.CpModel, 
+                             tasks: List[Dict], 
+                             machines: List[int], 
+                             variables: Dict, 
+                             times: List[List[int]]) -> None:
+    """Add all scheduling constraints to the model."""
+    """1. No Overlap on Machines"""
+    for machine_idx in machines:
+        machine_intervals = [
+            variables['intervals'][(task_idx, machine_idx)] 
+            for task_idx, _ in enumerate(tasks)
+        ]
         model.AddNoOverlap(machine_intervals)
-
-
-    # Constraint 2: Ensure the same job is not processed on multiple machines simultaneously
-    for t_idx in range(num_tasks):
-        task_intervals = [intervals[(t_idx, m_idx)] for m_idx in machines]
+    
+    """2. No task overlaps on the same machine"""
+    for task_idx, _ in enumerate(tasks):
+        task_intervals = [
+            variables['intervals'][(task_idx, machine_idx)] 
+            for machine_idx in machines
+        ]
         model.AddNoOverlap(task_intervals)
+        
+        """3. Respect Release Dates"""
+        for machine_idx in machines:
+            model.Add(variables['start'][(task_idx, machine_idx)] >= 
+                     tasks[task_idx]['ReleaseDate'])
+        
+        """4. Correct End Times: end time for each task is its maximum end time for all the machines"""
+        end_times_task = [
+            variables['start'][(task_idx, machine_idx)] + times[task_idx][machine_idx]
+            for machine_idx in machines
+        ]
+        model.AddMaxEquality(variables['task_end'][task_idx], end_times_task)
 
 
-    # Constraint 3: The start time of a task, at each machine, should be later 
-    # than its release date
-    for t_idx in range(num_tasks):
-        for m_idx in machines:
-            model.Add(start_task_per_machine_vars[(t_idx, m_idx)] >= tasks[t_idx]['ReleaseDate'])
+def create_objective_variables(model: cp_model.CpModel, 
+                             tasks: List[Dict], 
+                             variables: Dict, 
+                             horizon: int) -> List:
+    """Create and return tardiness variables for the objective function."""
+    weighted_tardiness = []
+    
+    for idx, task in enumerate(tasks):
+        tardiness_var = model.NewIntVar(0, horizon, f'lateness_task{idx}')
+        model.Add(tardiness_var >= variables['task_end'][idx] - task['DueDate'])
+        model.Add(tardiness_var >= 0)
+        weighted_tardiness.append(tardiness_var * task['Weight'])
+    
+    return weighted_tardiness
 
-    # Constraint 4: End time for each task is its maximum end time for all the machines
-    for t_idx in range(num_tasks):
-        end_times_task = [end_task_per_machine_vars[(t_idx, m_idx)] for m_idx in machines]
-        model.AddMaxEquality(end_task_vars[(t_idx)], end_times_task)
 
-
-    # Tardiness variables
-    tardiness_vars = []
-    for t_idx in range(num_tasks):
-        due_date = tasks[t_idx]['DueDate']
-        weight = tasks[t_idx]['Weight']
-
-        # lateness = max(0, finish - due_date)
-        # create an IntVar for lateness
-        lateness_var = model.NewIntVar(0, horizon, f'lateness_task{t_idx}')
-        model.Add(lateness_var >= end_task_vars[(t_idx)] - due_date)
-        model.Add(lateness_var >= 0)
-
-        # Weighted tardiness = weight * lateness
-        weighted_tardiness_var = model.NewIntVar(0, weight * horizon, f'wtardiness_task{t_idx}')
-        model.Add(weighted_tardiness_var == lateness_var * weight)
-
-        tardiness_vars.append(weighted_tardiness_var)
-
-    # Objective: minimize sum of weighted tardiness
+def solve_scheduling_problem(df: pd.DataFrame, 
+                           machine_columns: List[str]) -> Dict:
+    """Solve the scheduling problem and return results."""
+    tasks = df.to_dict('records')
+    machines = list(range(len(machine_columns)))
+    
+    horizon = max(
+        max(t['DueDate'] for t in tasks),
+        sum(max(t[col] for col in machine_columns) for t in tasks)
+    )
+    
+    model = cp_model.CpModel()
+    variables, times = create_model_variables(
+        model, tasks, machines, machine_columns, horizon
+    )
+    
+    add_scheduling_constraints(model, tasks, machines, variables, times)
+    
+    tardiness_vars = create_objective_variables(model, tasks, variables, horizon)
     model.Minimize(sum(tardiness_vars))
-
-    # Solve
+    
     solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 300.0
+    solver.parameters.num_search_workers = 8
+    
     start_time = time.time()
     status = solver.Solve(model)
-    end_time = time.time()
-
-    print(end_time - start_time)
-
+    solve_time = time.time() - start_time
+    
     results = {
-        'status': status,
-        'objective': None,
-        'schedule': []
+        'status': status, 
+        'objective': None, 
+        'schedule': [], 
+        'solve_time': solve_time
     }
-
-    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+    
+    if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         results['objective'] = solver.ObjectiveValue()
-
-        # Build output schedule info
-        for t_idx in range(num_tasks):
-            t_id = tasks[t_idx]['TaskID']
-            task_end_time = solver.Value(end_task_vars[(t_idx)])
-            tardiness = max(0, task_end_time - tasks[t_idx]['DueDate'])
-
-            machine_times = []
-            for m_idx in machines:
-                start_time = solver.Value(start_task_per_machine_vars[(t_idx, m_idx)])
-                end_time = solver.Value(end_task_per_machine_vars[(t_idx, m_idx)])
-                machine_times.append((m_idx, start_time, end_time))
-
-            results['schedule'].append({
-                'task_id': t_id,
-                'finish_time': task_end_time,
-                'tardiness': tardiness,
-                'machine_times': machine_times
-            })
-
+        results['schedule'] = extract_solution(solver, tasks, machines, variables, times)
+    
     return results
 
+def validate_schedule(schedule: List[Dict], 
+                     input_data: pd.DataFrame, 
+                     machine_columns: List[str],
+                     status: int) -> Dict:
+    """Validate the schedule against constraints."""
+    task_ids = set(input_data["TaskID"].tolist())
+    
+    results = {}
+    
+    # 1. Check that all tasks are handled
+    all_tasks_handled = all(task_id in [task["task_id"] for task in schedule] for task_id in task_ids)
+    if not all_tasks_handled:
+        missing_tasks = task_ids - {task["task_id"] for task in schedule}
+        results["all_tasks_handled"] = (
+            False,
+            f"The following tasks are missing from the schedule: {list(missing_tasks)}"
+        )
+    else:
+        results["all_tasks_handled"] = (True, "All tasks are handled in the schedule.")
 
-def create_gantt_chart(schedule):
-    """
-    Create a Gantt chart using Altair to ensure task lines are displayed properly.
-    """
+    # 2. Check that tasks do not start before their release dates
+    early_start_violations = []
+    for task in schedule:
+        task_id = task["task_id"]
+        release_date = input_data.loc[input_data["TaskID"] == task_id, "ReleaseDate"].values[0]
+        for machine_num, start_time, _ in task["machine_times"]:
+            if start_time < release_date:
+                early_start_violations.append(
+                    f"Task {task_id} on Machine {machine_num} starts before its release date ({start_time} < {release_date})."
+                )
+
+    if early_start_violations:
+        results["no_early_start"] = (False, "\n".join(early_start_violations))
+    else:
+        results["no_early_start"] = (True, "No tasks start before their release dates.")
+
+    # 3. Check that each task goes through all machines
+    machines_visited_violations = []
+    for task in schedule:
+        machine_times = [machine_num-1 for machine_num, _, _ in task["machine_times"]]
+        if sorted(machine_times) != sorted(range(len(machine_columns))):
+            machines_visited_violations.append(
+                f"Task {task['task_id']} does not go through all machines (expected {len(machine_columns)} machines)."
+            )
+
+    if machines_visited_violations:
+        results["all_machines_visited"] = (False, "\n".join(machines_visited_violations))
+    else:
+        results["all_machines_visited"] = (True, "All tasks visit all required machines.")
+
+    # 4. Check that each task spends the correct amount of time on each machine
+    processing_time_violations = []
+    for task in schedule:
+        task_id = task["task_id"]
+        for machine_num, start_time, end_time in task["machine_times"]:
+            expected_duration = input_data.loc[input_data["TaskID"] == task_id, machine_columns[machine_num-1]].values[0]
+            actual_duration = end_time - start_time
+            if actual_duration != expected_duration:
+                processing_time_violations.append(
+                    f"Task {task_id} on Machine {machine_num} has an incorrect duration ({actual_duration} != {expected_duration})."
+                )
+
+    if processing_time_violations:
+        results["correct_processing_time"] = (False, "\n".join(processing_time_violations))
+    else:
+        results["correct_processing_time"] = (True, "All tasks have the correct processing time on each machine.")
+    
+    results["Optimal solution"] = (
+        status == cp_model.OPTIMAL,
+        "Optimal solution found" if status == cp_model.OPTIMAL 
+        else "Feasible but not optimal solution found"
+    )
+    
+    return results
+
+def extract_solution(solver: cp_model.CpSolver, 
+                    tasks: List[Dict], 
+                    machines: List[int], 
+                    variables: Dict, 
+                    times: List[List[int]]) -> List[Dict]:
+    """Extract the solution from the solver."""
+    schedule = []
+    
+    for task_idx, task in enumerate(tasks):
+        task_end_time = solver.Value(variables['task_end'][task_idx])
+        tardiness = max(0, task_end_time - task['DueDate'])
+        
+        machine_times = [
+            (machine_idx + 1,
+             solver.Value(variables['start'][(task_idx, machine_idx)]),
+             solver.Value(variables['start'][(task_idx, machine_idx)]) + 
+             times[task_idx][machine_idx])
+            for machine_idx in machines
+        ]
+        
+        schedule.append({
+            'task_id': task['TaskID'],
+            'finish_time': task_end_time,
+            'tardiness': tardiness,
+            'machine_times': machine_times,
+            'weight': task['Weight']
+        })
+    
+    return schedule
+
+def create_gantt_chart(schedule: List[Dict], input_data: pd.DataFrame) -> alt.Chart:
+    """Create an interactive Gantt chart visualization."""
     chart_data = []
+    
     for entry in schedule:
         task_id = entry['task_id']
-        for (machine_num, start, end) in entry['machine_times']:
+        task_data = input_data.loc[input_data['TaskID'] == task_id].iloc[0]
+        
+        for machine_num, start, end in entry['machine_times']:
             chart_data.append({
                 'Task': f"Task {task_id}",
                 'Machine': f"M{machine_num}",
                 'Start': start,
-                'Finish': end
+                'Finish': end,
+                'Tardiness': entry['tardiness'],
+                'ReleaseDate': task_data['ReleaseDate'],
+                'DueDate': task_data['DueDate'],
+                'Weight': entry['weight'],
+                'TaskID': task_id,
             })
+    
     df_gantt = pd.DataFrame(chart_data)
+    selection = alt.selection_point(fields=['Task'], bind='legend')
 
-    # Use Altair to ensure task lines are properly displayed
-    chart = alt.Chart(df_gantt).mark_bar().encode(
+    return alt.Chart(df_gantt).mark_bar().encode(
         x=alt.X('Start:Q', title='Start Time'),
         x2=alt.X2('Finish:Q'),
         y=alt.Y('Machine:N', sort='-x', title='Machine'),
-        color='Task:N',
-        tooltip=['Task', 'Machine', 'Start', 'Finish']
+        color=alt.Color(
+            'Task:N',
+            title='Task',
+            sort=alt.EncodingSortField(field='TaskID', order='ascending')
+        ),
+        opacity=alt.condition(selection, alt.value(1), alt.value(0.2)),
+        tooltip=[
+            'Task:N',
+            'Start:Q',
+            'Finish:Q',
+            'ReleaseDate:Q',
+            'DueDate:Q',
+            'Tardiness:Q',
+            'Weight:Q'
+        ]
     ).properties(
         title="Schedule Gantt Chart",
         width=800,
         height=400
+    ).add_params(selection)
+
+def schedule_to_dataframe(schedule: List[Dict]) -> pd.DataFrame:
+    """Convert schedule to DataFrame format for export."""
+    return pd.DataFrame([
+        {
+            'TaskID': entry['task_id'],
+            'Weight': entry['weight'],
+            'Machine': machine_num,
+            'Start': start,
+            'Finish': end,
+            'Tardiness': entry['tardiness'] if machine_num == entry['machine_times'][-1][0] else 0
+        }
+        for entry in schedule
+        for machine_num, start, end in entry['machine_times']
+    ])
+
+def validate_columns(df: pd.DataFrame) -> bool:
+    """Validate required columns in the input data."""
+    required_columns = {"TaskID", "ReleaseDate", "DueDate", "Weight"}
+    machine_columns = {col for col in df.columns 
+                      if col.upper().startswith("M") and col.upper().endswith("TIME")}
+    
+    missing_columns = required_columns - set(df.columns)
+    if missing_columns:
+        st.error(f"Missing required columns: {', '.join(missing_columns)}")
+        return False
+    
+    unexpected_columns = set(df.columns) - required_columns - machine_columns
+    if unexpected_columns:
+        st.error(f"Unexpected columns found: {', '.join(unexpected_columns)}")
+        return False
+    
+    return True
+
+def display_empty_cells(df: pd.DataFrame) -> None:
+    """Display rows with empty cells."""
+    empty_cells = df[df.isnull().any(axis=1)]
+    styled_df = empty_cells.style.applymap(
+        lambda x: 'background-color: rgba(255, 0, 0, 0.6)' if pd.isnull(x) else ''
     )
-    return chart
+    
+    st.error("File contains empty cells. Please fill in missing values.")
+    st.markdown("### Rows with Missing Values")
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
-def schedule_to_dataframe(schedule):
-    """
-    Convert the schedule list of dicts into a row-based DataFrame so it’s easy to export to Excel.
-    Each machine-time range becomes a separate row:
-      [TaskID, Machine, Start, Finish, Tardiness (only repeated for convenience)]
-    """
-    rows = []
-    for entry in schedule:
-        t_id = entry['task_id']
-        t_tardiness = entry['tardiness']
-        for (m_num, s, f) in entry['machine_times']:
-            rows.append({
-                'TaskID': t_id,
-                'Machine': m_num,
-                'Start': s,
-                'Finish': f,
-                'Tardiness': t_tardiness if m_num == entry['machine_times'][-1][0] else 0
-            })
-    return pd.DataFrame(rows)
-
-
-def main():
-    st.title("Multi-Machine Scheduling (Weighted Tardiness Minimization)")
-
-    st.write(
-        """
-        **Instructions**:  
-        1. Upload an Excel file with columns:
-           - **TaskID** (unique integer or label)
-           - **ReleaseDate**
-           - **DueDate**
-           - **Weight**
-           - **M1Time**, **M2Time**, **M3Time**, etc. (one column per machine)  
-        2. Click **Solve** to compute an optimal or feasible schedule.  
-        3. View the Gantt chart, schedule details, and **download** the solution.
-        """
-    )
-
-    # File uploader for real input data
-    uploaded_file = st.file_uploader("Upload an Excel file", type=["xlsx"])
-
-    if uploaded_file is not None:
-        df = pd.read_excel(uploaded_file)
-        st.write("### Input Data")
-        st.dataframe(df)
-
-        # Identify machine columns automatically (columns that start with "M" and end with "Time")
-        # Or you can specify them directly if you prefer.
-        possible_machine_cols = [c for c in df.columns if c.upper().startswith("M") and c.upper().endswith("TIME")]
-        st.write(f"**Detected machine time columns**: {possible_machine_cols}")
-
-        # Let user verify or override which columns are machine times
-        machine_columns = st.multiselect(
+def setup_machine_columns(df: pd.DataFrame) -> List[str]:
+    """Setup and configure machine columns."""
+    possible_machine_columns = [
+        col for col in df.columns 
+        if col.upper().startswith("M") and col.upper().endswith("TIME")
+    ]
+    machine_names = [f"Machine {col[1]}" for col in possible_machine_columns]
+    
+    with st.sidebar:
+        st.markdown("### Configure Machine Columns")
+        selected_machines = st.multiselect(
             "Select Machine Columns (in order):",
-            possible_machine_cols,
-            default=possible_machine_cols
+            machine_names,
+            default=machine_names
         )
+        st.markdown("---")
+    
+    return [f"M{name[-1]}Time" for name in selected_machines]
 
-        if st.button("Solve Scheduling Problem"):
-            # Solve
-            results = solve_scheduling_problem(df, machine_columns)
-            status = results['status']
-            objective = results['objective']
-            schedule = results['schedule']
-            print("schedule:", schedule)
-
-            if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-                st.success(f"Solution found. Total Weighted Tardiness = {objective}")
-
-                # Display a Gantt chart
-                fig_gantt = create_gantt_chart(schedule)
-                st.altair_chart(fig_gantt, use_container_width=True)
-
-                # Display detailed schedule info
-                st.write("### Detailed Schedule")
-                results_df = schedule_to_dataframe(schedule)
-                st.dataframe(results_df)
-
-                # Download solution as Excel
-                output_bytes = io.BytesIO()
-                with pd.ExcelWriter(output_bytes, engine="openpyxl") as writer:
-                    results_df.to_excel(writer, index=False, sheet_name="Schedule")
-                    # Optionally include the input data in the same file:
-                    df.to_excel(writer, index=False, sheet_name="InputData")
-                output_bytes.seek(0)
-
-                st.download_button(
-                    label="Download Schedule as Excel",
-                    data=output_bytes,
-                    file_name="schedule_solution.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-            else:
-                st.error("No feasible solution found. Please check your input data.")
+def process_scheduling_solution(df: pd.DataFrame, machine_columns: List[str]) -> None:
+    """Process and display the scheduling solution."""
+    with st.spinner("Solving the scheduling problem..."):
+        results = solve_scheduling_problem(df, machine_columns)
+        
+    if results['status'] in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+        st.success(f"Solution found! Total Weighted Tardiness = {results['objective']:.1f}")
+        
+        with st.expander("Gantt Chart", expanded=True):
+            fig_gantt = create_gantt_chart(results['schedule'], df)
+            st.altair_chart(fig_gantt, use_container_width=True)
+        
+        with st.expander("Detailed Schedule"):
+            results_df = schedule_to_dataframe(results['schedule'])
+            st.dataframe(results_df, use_container_width=True, hide_index=True)
+        
+        with st.expander("Validation Results"):
+            validation_results = validate_schedule(
+                results['schedule'], df, machine_columns, results['status']
+            )
+            display_validation_results(validation_results)
+        
+        create_download_button(results_df, df)
     else:
-        st.info("Please upload an Excel file to begin.")
+        st.error("No feasible solution found. Please check your input data.")
 
+def display_validation_results(validation_results: Dict) -> None:
+    """Display validation results with appropriate formatting."""
+    for constraint, (is_satisfied, message) in validation_results.items():
+        constraint_name = constraint.replace('_', ' ').capitalize()
+        if is_satisfied:
+            st.markdown(f"- **{constraint_name}**: Satisfied ✅")
+        else:
+            st.markdown(f"- **{constraint_name}**: Not satisfied ❌")
+            st.text(f"    {message}")
+
+def create_download_button(results_df: pd.DataFrame, input_df: pd.DataFrame) -> None:
+    """Create and display the download button for the solution."""
+    st.markdown("### Download Solution")
+    output_bytes = io.BytesIO()
+    
+    with pd.ExcelWriter(output_bytes, engine="openpyxl") as writer:
+        results_df.to_excel(writer, index=False, sheet_name="Schedule")
+        input_df.to_excel(writer, index=False, sheet_name="InputData")
+    
+    output_bytes.seek(0)
+    st.download_button(
+        label="Download Schedule as Excel",
+        data=output_bytes,
+        file_name="schedule_solution.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+def setup_sidebar() -> None:
+    """Setup the sidebar with instructions."""
+    with st.sidebar:
+        st.title("Upload task data")
+        st.markdown(
+            """
+            1. Upload an Excel file (.xlsx) with:
+               - **TaskID** (unique identifier)
+               - **ReleaseDate**
+               - **DueDate**
+               - **Weight**
+               - **Machine1Time**, **Machine2Time**, etc.
+            2. Configure detected machine columns below.
+            3. Click **Solve Scheduling Problem** to optimize.
+            """
+        )
+        st.info("Ensure correct file format to avoid errors.")
+
+def setup_main_page() -> None:
+    """Setup the main page with title and description."""
+    st.title("Multi-Machine Scheduling Optimizer")
+    st.markdown(
+        """
+        Optimize multi-machine scheduling tasks to minimize total 
+        **weighted tardiness**.  
+        Use the **sidebar** to upload data and configure settings.
+        """
+    )
+
+def load_and_validate_data(uploaded_file) -> pd.DataFrame:
+    """Load and validate the uploaded data."""
+    try:
+        df = pd.read_excel(uploaded_file)
+        df.columns = df.columns.map(str)
+        
+        if not validate_columns(df):
+            return None
+            
+        if df.isnull().values.any():
+            display_empty_cells(df)
+            return None
+            
+        st.markdown("### Input Data Preview")
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        return df
+        
+    except Exception as e:
+        st.error(f"Error reading file: {e}")
+        return None
+
+def main() -> None:
+    """Main application function."""
+    st.set_page_config(
+        page_title="Multi-Machine Scheduling Optimizer",
+        page_icon="🛠️",
+        layout="wide"
+    )
+    
+    setup_sidebar()
+    setup_main_page()
+    
+    uploaded_file = st.sidebar.file_uploader("Upload Excel File", type=["xlsx"])
+    if not uploaded_file:
+        st.info("Upload an Excel file to start.")
+        return
+        
+    df = load_and_validate_data(uploaded_file)
+    if df is None:
+        return
+        
+    machine_columns = setup_machine_columns(df)
+    
+    if st.button("Solve Scheduling Problem"):
+        process_scheduling_solution(df, machine_columns)
 
 if __name__ == "__main__":
     main()
