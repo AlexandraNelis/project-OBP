@@ -83,7 +83,7 @@ def create_objective_variables(model: cp_model.CpModel,
         tardiness_var = model.NewIntVar(0, horizon, f'lateness_task{idx}')
         model.Add(tardiness_var >= variables['task_end'][idx] - task['DueDate'])
         model.Add(tardiness_var >= 0)
-        weighted_tardiness.append(tardiness_var * task['Weight'])
+        weighted_tardiness.append(tardiness_var * task['Weight']) #to prioritize important tasks
     
     return weighted_tardiness
 
@@ -93,25 +93,21 @@ def solve_scheduling_problem(df: pd.DataFrame,
     """Solve the scheduling problem and return results."""
     tasks = df.to_dict('records')
     machines = list(range(len(machine_columns)))
-    
     horizon = max(
         max(t['DueDate'] for t in tasks),
         sum(max(t[col] for col in machine_columns) for t in tasks)
-    )
-    
+    ) #defines the maximum possible end time for any task in the optimization problem
     model = cp_model.CpModel()
     variables, times = create_model_variables(
         model, tasks, machines, machine_columns, horizon
     )
-    
     add_scheduling_constraints(model, tasks, machines, variables, times)
-    
     tardiness_vars = create_objective_variables(model, tasks, variables, horizon)
     model.Minimize(sum(tardiness_vars))
     
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 300.0
-    solver.parameters.num_search_workers = 8
+    solver.parameters.max_time_in_seconds = 300.0 #5 minutes
+    solver.parameters.num_search_workers = 8 #the solver can use up to 8 CPU cores to explore multiple parts of the solution space simultaneously (parallel search)
     
     start_time = time.time()
     status = solver.Solve(model)
@@ -123,12 +119,13 @@ def solve_scheduling_problem(df: pd.DataFrame,
         'schedule': [], 
         'solve_time': solve_time
     }
-    
+
     if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         results['objective'] = solver.ObjectiveValue()
         results['schedule'] = extract_solution(solver, tasks, machines, variables, times)
     
     return results
+
 
 def validate_schedule(schedule: List[Dict], 
                      input_data: pd.DataFrame, 
@@ -197,6 +194,7 @@ def validate_schedule(schedule: List[Dict],
     else:
         results["correct_processing_time"] = (True, "All tasks have the correct processing time on each machine.")
     
+    # 5. Check that the objective is optimized
     results["Optimal solution"] = (
         status == cp_model.OPTIMAL,
         "Optimal solution found" if status == cp_model.OPTIMAL 
@@ -204,6 +202,7 @@ def validate_schedule(schedule: List[Dict],
     )
     
     return results
+
 
 def extract_solution(solver: cp_model.CpSolver, 
                     tasks: List[Dict], 
@@ -224,7 +223,7 @@ def extract_solution(solver: cp_model.CpSolver,
              times[task_idx][machine_idx])
             for machine_idx in machines
         ]
-        
+
         schedule.append({
             'task_id': task['TaskID'],
             'finish_time': task_end_time,
@@ -234,6 +233,7 @@ def extract_solution(solver: cp_model.CpSolver,
         })
     
     return schedule
+
 
 def create_gantt_chart(schedule: List[Dict], input_data: pd.DataFrame) -> alt.Chart:
     """Create an interactive Gantt chart visualization."""
@@ -284,6 +284,7 @@ def create_gantt_chart(schedule: List[Dict], input_data: pd.DataFrame) -> alt.Ch
         height=400
     ).add_params(selection)
 
+
 def schedule_to_dataframe(schedule: List[Dict]) -> pd.DataFrame:
     """Convert schedule to DataFrame format for export."""
     return pd.DataFrame([
@@ -298,6 +299,7 @@ def schedule_to_dataframe(schedule: List[Dict]) -> pd.DataFrame:
         for entry in schedule
         for machine_num, start, end in entry['machine_times']
     ])
+
 
 def validate_columns(df: pd.DataFrame) -> bool:
     """Validate required columns in the input data."""
@@ -317,6 +319,7 @@ def validate_columns(df: pd.DataFrame) -> bool:
     
     return True
 
+
 def display_empty_cells(df: pd.DataFrame) -> None:
     """Display rows with empty cells."""
     empty_cells = df[df.isnull().any(axis=1)]
@@ -327,6 +330,7 @@ def display_empty_cells(df: pd.DataFrame) -> None:
     st.error("File contains empty cells. Please fill in missing values.")
     st.markdown("### Rows with Missing Values")
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
 
 def setup_machine_columns(df: pd.DataFrame) -> List[str]:
     """Setup and configure machine columns."""
@@ -346,6 +350,7 @@ def setup_machine_columns(df: pd.DataFrame) -> List[str]:
         st.markdown("---")
     
     return [f"M{name[-1]}Time" for name in selected_machines]
+
 
 def process_scheduling_solution(df: pd.DataFrame, machine_columns: List[str]) -> None:
     """Process and display the scheduling solution."""
@@ -373,6 +378,7 @@ def process_scheduling_solution(df: pd.DataFrame, machine_columns: List[str]) ->
     else:
         st.error("No feasible solution found. Please check your input data.")
 
+
 def display_validation_results(validation_results: Dict) -> None:
     """Display validation results with appropriate formatting."""
     for constraint, (is_satisfied, message) in validation_results.items():
@@ -382,6 +388,7 @@ def display_validation_results(validation_results: Dict) -> None:
         else:
             st.markdown(f"- **{constraint_name}**: Not satisfied ❌")
             st.text(f"    {message}")
+
 
 def create_download_button(results_df: pd.DataFrame, input_df: pd.DataFrame) -> None:
     """Create and display the download button for the solution."""
@@ -399,6 +406,7 @@ def create_download_button(results_df: pd.DataFrame, input_df: pd.DataFrame) -> 
         file_name="schedule_solution.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
 
 def setup_sidebar() -> None:
     """Setup the sidebar with instructions."""
@@ -418,6 +426,7 @@ def setup_sidebar() -> None:
         )
         st.info("Ensure correct file format to avoid errors.")
 
+
 def setup_main_page() -> None:
     """Setup the main page with title and description."""
     st.title("Multi-Machine Scheduling Optimizer")
@@ -428,6 +437,7 @@ def setup_main_page() -> None:
         Use the **sidebar** to upload data and configure settings.
         """
     )
+
 
 def load_and_validate_data(uploaded_file) -> pd.DataFrame:
     """Load and validate the uploaded data."""
@@ -449,6 +459,7 @@ def load_and_validate_data(uploaded_file) -> pd.DataFrame:
     except Exception as e:
         st.error(f"Error reading file: {e}")
         return None
+
 
 def main() -> None:
     """Main application function."""
