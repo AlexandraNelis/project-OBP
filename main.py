@@ -193,16 +193,16 @@ def create_gantt_chart(schedule, input_data):
                 field='TaskID', 
                 order='ascending'
             ),
-            scale=alt.Scale(scheme='category20b'),  # Use a color scheme with more colors
+            scale=alt.Scale(scheme='turbo'), 
             legend=alt.Legend(
                 title="Tasks",
-                symbolLimit=100,  # Allow for a larger number of symbols
-                orient="right",
+                symbolLimit=100,
+                orient="bottom",
                 labelFontSize=10,
                 titleFontSize=12,
-                labelLimit=2000,  # Increase the space for task labels
-                columns=2,  # Use multiple columns in the legend
-                direction="vertical",  # Set the legend to vertical orientation
+                labelLimit=2000,
+                columns=10,
+                direction="vertical",
             )
         ),
         opacity=alt.condition(selection, alt.value(1), alt.value(0.2)),
@@ -218,7 +218,7 @@ def create_gantt_chart(schedule, input_data):
     ).properties(
         title="Schedule Gantt Chart",
         width=800,
-        height=400
+        height=600
     ).add_selection(
         selection
     )
