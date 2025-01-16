@@ -155,7 +155,7 @@ def extract_solution(solver, tasks, machines, variables, times):
 def create_gantt_chart(schedule, input_data):
     """
     Create a Gantt chart using Altair.
-    The chart includes an interactive legend to select tasks.
+    The chart includes a large interactive legend for tasks and supports a broader color palette.
     """
 
     chart_data = []
@@ -192,6 +192,17 @@ def create_gantt_chart(schedule, input_data):
             sort=alt.EncodingSortField(
                 field='TaskID', 
                 order='ascending'
+            ),
+            scale=alt.Scale(scheme='category20b'),  # Use a color scheme with more colors
+            legend=alt.Legend(
+                title="Tasks",
+                symbolLimit=100,  # Allow for a larger number of symbols
+                orient="right",
+                labelFontSize=10,
+                titleFontSize=12,
+                labelLimit=2000,  # Increase the space for task labels
+                columns=2,  # Use multiple columns in the legend
+                direction="vertical",  # Set the legend to vertical orientation
             )
         ),
         opacity=alt.condition(selection, alt.value(1), alt.value(0.2)),
