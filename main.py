@@ -155,7 +155,7 @@ def extract_solution(solver, tasks, machines, variables, times):
 def create_gantt_chart(schedule, input_data):
     """
     Create a Gantt chart using Altair.
-    The chart includes an interactive legend to highlight tasks.
+    The chart includes an interactive legend to select tasks.
     """
 
     chart_data = []
@@ -194,7 +194,7 @@ def create_gantt_chart(schedule, input_data):
                 order='ascending'
             )
         ),
-        opacity=alt.condition(selection, alt.value(1), alt.value(0.2)),  # Dim non-selected tasks
+        opacity=alt.condition(selection, alt.value(1), alt.value(0.2)),
         tooltip=[
             'Task:N',
             'Start:Q',
@@ -212,6 +212,7 @@ def create_gantt_chart(schedule, input_data):
         selection
     )
     return chart
+
 
 def schedule_to_dataframe(schedule):
     """
@@ -325,14 +326,12 @@ def validate_schedule(schedule, input_data, machine_columns,status):
 
 
 def main():
-    # Set a wide layout for better visuals
     st.set_page_config(
         page_title="Multi-Machine Scheduling Optimizer",
         page_icon="🛠️",
         layout="wide"
     )
 
-    # Add a sidebar for navigation and instructions
     with st.sidebar:
         st.title("Upload task data")
         st.markdown(
@@ -342,7 +341,7 @@ def main():
                - **ReleaseDate**
                - **DueDate**
                - **Weight**
-               - **Machine1Time**, **Machine2Time**, etc.  \n
+               - **M1Time**, **M2Time**, etc.  \n
                   *(processing times on each machine)*
             2. Configure detected machine columns below.
             3. Click **Solve Scheduling Problem** to optimize the schedule.
@@ -351,7 +350,6 @@ def main():
         st.info("Ensure your file follows the required format to avoid errors.")
         uploaded_file = st.file_uploader("", type=["xlsx"])
 
-    # Title and description in the main layout
     st.title("Multi-Machine Scheduling Optimizer")
     st.markdown(
         """
@@ -362,18 +360,21 @@ def main():
 
     if uploaded_file is not None:
         try:
-            # Read and display input data
             df = pd.read_excel(uploaded_file)
         except Exception as e:
             st.error(f"Error reading the file: {e}")
             return
 
-        # Convert column names to strings for validation
         df.columns = df.columns.map(str)
 
         # Define required and machine columns
         required_columns = {"TaskID", "ReleaseDate", "DueDate", "Weight"}
-        possible_machine_columns = [col for col in df.columns if col.upper().startswith("M") and col.upper().endswith("TIME")]
+
+        # Validate machine column format
+        possible_machine_columns = [
+            col for col in df.columns 
+            if col.upper().startswith("M") and col.upper().endswith("TIME") and col[1:-4].isdigit()
+        ]
 
         # Validate required columns
         missing_columns = required_columns - set(df.columns)
@@ -398,27 +399,20 @@ def main():
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             return
 
-        # Detect machine columns automatically
-        possible_machines_names = [f"Machine {col[1]}" for col in possible_machine_columns]
-
         st.markdown("### Input Data Preview")
         st.dataframe(df, use_container_width=True, hide_index=True)
 
-        # Add a section to configure machine columns in the sidebar
         with st.sidebar:
             st.markdown("### Configure Machine Columns")
             machine_columns = st.multiselect(
                 "Select Machine Columns (in order):",
-                possible_machines_names,
-                default=possible_machines_names
+                possible_machine_columns,
+                default=possible_machine_columns
             )
             st.markdown("---")
 
-
         if st.button("Solve Scheduling Problem"):
-            # Solve the scheduling problem
             with st.spinner("Solving the scheduling problem..."):
-                machine_columns = [c[0] + c[-1] + "Time" for c in machine_columns]
                 results = solve_scheduling_problem(df, machine_columns)
                 status = results["status"]
                 objective = results["objective"]
@@ -427,7 +421,6 @@ def main():
             if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
                 st.success(f"Solution found! Total Weighted Tardiness = {objective:.1f}")
 
-                # Display results in an expandable container
                 with st.expander("Gantt Chart", expanded=True):
                     fig_gantt = create_gantt_chart(schedule, df)
                     st.altair_chart(fig_gantt, use_container_width=True)
@@ -445,7 +438,6 @@ def main():
                             st.markdown(f"- **{constraint.replace('_', ' ').capitalize()}**: Not satisfied ❌")
                             st.text(f"    {message}")
 
-                # Add download button for schedule
                 st.markdown("### Download Solution")
                 output_bytes = io.BytesIO()
                 with pd.ExcelWriter(output_bytes, engine="openpyxl") as writer:
