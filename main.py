@@ -169,8 +169,8 @@ def evaluate_solver():
     Run the solver with increasing job and machine sizes, and record results.
     """
     results = []
-    max_jobs = 10  # Maximum number of jobs to test
-    max_machines = 2  # Maximum number of machines to test
+    max_jobs = 100  # Maximum number of jobs to test
+    max_machines = 35  # Maximum number of machines to test
     time_limit = 60  # Time limit in seconds
     largest_set_of_jobs = {}
     batch = 5
@@ -204,12 +204,13 @@ def evaluate_solver():
                 Time_capped = True
                 solving_set.sort(key=lambda x: x[1])
             # Record performance
+            print(Time_capped)
             results.append({
                 "NumJobs": num_jobs,
                 "NumMachines": num_machines,
                 "SolverStatus": solving_set[0][0]["status"],
                 "ObjectiveValue": solving_set[0][0]["objective"],
-                "SolveTime": solving_set[0][2],
+                "SolveTime":np.mean([time_value for _, condition, time_value in solving_set if condition!=Time_capped]),
                 "TimeCapped": Time_capped
             })
             if  results[-1]['SolveTime']<=60:
