@@ -153,14 +153,17 @@ def generate_test_case(num_jobs, num_machines):
     """
     Generate a synthetic test case with the specified number of jobs and machines.
     """
+    min_time_service = 1
+    max_time_service = 10
+    average_service = np.average(min_time_service,max_time_service)
     data = {
         "TaskID": list(range(1, num_jobs + 1)),
-        "ReleaseDate": np.random.randint(0, 10, size=num_jobs),  # Random release dates
-        "DueDate": np.random.randint(20, 50, size=num_jobs),    # Random due dates
-        "Weight": np.random.randint(1, 5, size=num_jobs),       # Random weights
+        "ReleaseDate": np.random.randint(0,min_time_service*(num_machines+1), size=num_jobs),  # 0,11
+        "DueDate": np.random.randint(average_service*(num_machines + 1 ), max_time_service*(num_machines+1), size=num_jobs), #55,110
+        "Weight": np.random.randint(1, 3, size=num_jobs),       # Random weights
     }
     for i in range(1, num_machines + 1):
-        data[f"Machine {i}"] = np.random.randint(1, 5, size=num_jobs)  # Random processing times
+        data[f"Machine {i}"] = np.random.randint(min_time_service, max_time_service, size=num_jobs)  # Random processing times
 
     return pd.DataFrame(data)
 
@@ -212,6 +215,7 @@ def evaluate_solver():
                 "ObjectiveValue": solving_set[0][0]["objective"],
                 "SolveTime":np.mean([time_value for _, condition, time_value in solving_set if condition!=Time_capped]),
                 "TimeCapped": Time_capped
+                "Horizon": max(df["DueDate"])
             })
             if  results[-1]['SolveTime']<=60:
                 best_job = num_jobs
