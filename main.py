@@ -8,7 +8,8 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 import base64
-
+import gurobipy as gp
+from gurobipy import Model, GRB, quicksum
 
 def solve_gurobi_scheduling_problem(df, machine_columns):
     """
@@ -304,7 +305,7 @@ def evaluate_solver():
                 st.write(f"trial {i+1}")
                 machine_columns = [f"Machine {i}" for i in range(1, num_machines + 1)]
                 start_time = time.time()
-                result = solve_scheduling_problem(df, machine_columns)
+                result = solve_gurobi_scheduling_problem(df, machine_columns)
                 end_time = time.time()
                 solving_time =  end_time - start_time
                 if solving_time >= time_limit:
@@ -327,7 +328,7 @@ def evaluate_solver():
                 "SolverStatus": solving_set[0][0]["status"],
                 "ObjectiveValue": solving_set[0][0]["objective"],
                 "SolveTime":np.mean([time_value for _, condition, time_value in solving_set if condition!=Time_capped]),
-                "TimeCapped": Time_capped
+                "TimeCapped": Time_capped,
                 "Horizon": max(df["DueDate"])
             })
             if  results[-1]['SolveTime']<=60:
