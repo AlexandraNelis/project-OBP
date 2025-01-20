@@ -1,10 +1,128 @@
 import streamlit as st
 import pandas as pd
-from ortools.sat.python import cp_model
 import io
 import altair as alt
 import time
+import gurobipy as gp
 
+from gurobipy import Model, GRB, quicksum
+from itertools import combinations
+from ortools.sat.python import cp_model
+
+
+def solve_scheduling_problem_gurobi(df, machine_columns):
+    """
+    Given a DataFrame `df` with columns:
+      - 'TaskID' (unique identifier)
+      - 'ReleaseDate'
+      - 'DueDate'
+      - 'Weight'
+      - columns in `machine_columns` for processing times on each machine
+
+    Returns:
+      A dictionary containing:
+        - 'status': solver status
+        - 'objective': objective function value (sum of weighted tardiness)
+        - 'schedule': list of dicts describing the schedule, with fields:
+            'task_id', 'finish_time', 'tardiness', 'machine_times'
+    """
+    tasks = df.to_dict('records')
+    model = gp.Model("WeightedTardinessScheduling")
+
+    num_tasks = len(tasks)
+    jobs = list(range(num_tasks)) # e.g. [0,1,2] if there are 3 jobs
+    machines = list(range(len(machine_columns)))  # e.g. [0,1,2] if there are 3 machine columns
+
+    # Build a 2D list for processing times: times[task_idx][machine_idx]
+    times = [[t[col] for col in machine_columns] for t in tasks]
+
+    # Define horizon as sum of all processing times (a crude upper bound)
+    horizon = sum(sum(t_row) for t_row in times)
+
+
+    x = model.addVars(jobs, machines, vtype=GRB.INTEGER, name="x")  # Start times for a job at a given machine
+
+    #z = model.addVars(jobs,jobs, machines, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed before job i at machine k)
+    #z1 = model.addVars(machines, machines, jobs, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed at machine i before machine j)
+
+    z = model.addVars(combinations(jobs, 2), machines, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed before job i at machine k)
+    z1 = model.addVars(combinations(machines, 2), jobs, vtype=GRB.BINARY, name="z")  # Binary variables (1 if job j is processed at machine i before machine j)
+    T = model.addVars(jobs, lb = 0, vtype=GRB.INTEGER, name="T")  # Tardiness for each job
+
+    model.setObjective(quicksum(tasks[j]['Weight'] * T[j] for j in jobs), GRB.MINIMIZE)
+    
+    # Constraints
+    for i in jobs:
+        for k in machines:
+            # Start times must be later than the release date
+            model.addConstr(x[i, k] >= tasks[i]['ReleaseDate'], name=f"start_time_nonneg_{i}_{k}")
+            # Tardiness
+            model.addConstr(T[i] >= x[i, k] + times[i][k] - tasks[i]['DueDate'], name=f"tardiness_{i}_{k}")
+    
+    for k in machines:
+        for i in jobs:
+            for j in jobs:
+                if i < j:  # Avoid duplicate pairs
+                    # Disjunctive constraints(the same machine can not process simultaneously multiple machines)
+                    model.addConstr(
+                        x[i, k] + times[i][k] <= x[j, k] + horizon * (1 - z[i, j, k]),
+                        name=f"job_{i}_before_{j}_on_machine_{k}"
+                    )
+                    model.addConstr(
+                        x[j, k] + times[j][k] <= x[i, k] + horizon * z[i, j, k],
+                        name=f"job_{i}_before_{j}_on_machine_{k}"
+                    )
+    
+    for k in jobs:
+        for i in machines:
+            for j in machines:
+                if i < j:  # Avoid duplicate pairs
+                    # Disjunctive constraints (the same job can not be processed simultaneously by multiple machines)
+                    model.addConstr(
+                        x[k, i] + times[k][i] <= x[k, j] + horizon * (1 - z1[i, j, k]),
+                        name=f"job_{i}_before_{j}_on_machine_{k}"
+                    )
+                    model.addConstr(
+                        x[k, j] + times[k][j] <= x[k, i] + horizon * z1[i, j, k],
+                        name=f"machine_{i}_before_{j}_on_job_{k}"
+                    )
+
+    # Solve
+    start_time = time.time()
+    model.optimize()
+    end_time = time.time()
+    print(end_time - start_time)
+
+    status = model.status
+    results = {
+        'status': status,
+        'objective': None,
+        'schedule': []
+    }
+
+    if status == GRB.OPTIMAL or status == GRB.SUBOPTIMAL:
+        results['objective'] = model.ObjVal
+
+        # Build output schedule info
+        for t_idx in range(num_tasks):
+            t_id = tasks[t_idx]['TaskID']
+            tardiness = T[t_idx].X
+            weight = tasks[t_idx]['Weight']
+
+            machine_times = []
+            for m_idx in machines:
+                start_time = x[t_idx, m_idx].X
+                end_time = x[t_idx, m_idx].X + times[t_idx][m_idx]
+                machine_times.append((m_idx, start_time, end_time))
+
+            results['schedule'].append({
+                'task_id': t_id,
+                'tardiness': tardiness,
+                'machine_times': machine_times,
+                'weight': weight
+            })
+
+    return results
 
 def create_model_variables(model, tasks, machines, machine_columns, horizon):
     """Create and return all model variables."""
@@ -360,6 +478,11 @@ def main():
         )
         st.info("Ensure your file follows the required format to avoid errors.")
         uploaded_file = st.file_uploader("", type=["xlsx"])
+        
+        st.title("Select solver")
+        solver_choice = st.selectbox(
+            "Select Solver:", ["OR-Tools", "Gurobi"], help="Choose the solver to optimize the schedule."
+        )
 
     st.title("Multi-Machine Scheduling Optimizer")
     st.markdown(
@@ -423,8 +546,12 @@ def main():
             st.markdown("---")
 
         if st.button("Solve Scheduling Problem"):
-            with st.spinner("Solving the scheduling problem..."):
-                results = solve_scheduling_problem(df, machine_columns)
+
+            with st.spinner(f"Solving the scheduling problem with {solver_choice}..."):
+                if solver_choice == "OR-Tools":
+                    results = solve_scheduling_problem(df, machine_columns)
+                elif solver_choice == "Gurobi":
+                    results = solve_scheduling_problem_gurobi(df, machine_columns)
                 status = results["status"]
                 objective = results["objective"]
                 schedule = results["schedule"]
