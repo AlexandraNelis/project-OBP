@@ -478,11 +478,14 @@ def main():
         )
         st.info("Ensure your file follows the required format to avoid errors.")
         uploaded_file = st.file_uploader("", type=["xlsx"])
+        st.markdown("---")
         
+
         st.title("Select solver")
         solver_choice = st.selectbox(
             "Select Solver:", ["OR-Tools", "Gurobi"], help="Choose the solver to optimize the schedule."
         )
+        st.markdown("---")
 
     st.title("Multi-Machine Scheduling Optimizer")
     st.markdown(
@@ -537,11 +540,12 @@ def main():
         st.dataframe(df, use_container_width=True, hide_index=True)
 
         with st.sidebar:
-            st.markdown("### Configure Machine Columns")
+            st.title("Configure Machine Columns")
             machine_columns = st.multiselect(
                 "Select Machine Columns (in order):",
                 possible_machine_columns,
-                default=possible_machine_columns
+                default=possible_machine_columns,
+                help="Choose which columns should be taken into account as columns containing machine processing times."
             )
             st.markdown("---")
 
