@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import base64
 import gurobipy as gp
 from gurobipy import Model, GRB, quicksum
+from itertools import combinations
+
 
 def solve_gurobi_scheduling_problem(df, machine_columns):
     """
@@ -269,7 +271,7 @@ def generate_test_case(num_jobs, num_machines):
     """
     min_time_service = 1
     max_time_service = 10
-    average_service = np.average(min_time_service,max_time_service)
+    average_service =(min_time_service+max_time_service)/2
     data = {
         "TaskID": list(range(1, num_jobs + 1)),
         "ReleaseDate": np.random.randint(0,min_time_service*(num_machines+1), size=num_jobs),  # 0,11
@@ -305,7 +307,7 @@ def evaluate_solver():
                 st.write(f"trial {i+1}")
                 machine_columns = [f"Machine {i}" for i in range(1, num_machines + 1)]
                 start_time = time.time()
-                result = solve_gurobi_scheduling_problem(df, machine_columns)
+                result = solve_or_scheduling_problem(df, machine_columns)
                 end_time = time.time()
                 solving_time =  end_time - start_time
                 if solving_time >= time_limit:
