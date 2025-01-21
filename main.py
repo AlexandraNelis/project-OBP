@@ -141,7 +141,7 @@ def solve_scheduling_problem(df, machine_columns):
     # Add time limit and other parameters to improve performance
     solver.parameters.max_time_in_seconds = 300.0  # 5 minute timeout
     solver.parameters.num_search_workers = 8  # Use multiple cores
-    #solver.parameters.log_search_progress = True  # Enable logging
+    solver.parameters.log_search_progress = True  # Enable logging for debugging
     
     start_time = time.time()
     status = solver.Solve(model)
@@ -323,8 +323,8 @@ def identify_machine_columns(df):
 def create_gurobi_variables(model, jobs, machines, horizon):
     """Create and return Gurobi model variables."""
     x = model.addVars(jobs, machines, vtype=GRB.INTEGER, name="x")
-    z = model.addVars(combinations(jobs, 2), machines, vtype=GRB.BINARY, name="z")
-    z1 = model.addVars(combinations(machines, 2), jobs, vtype=GRB.BINARY, name="z")
+    z = model.addVars(combinations(jobs, 2), machines, vtype=GRB.BINARY, name="z_machines")
+    z1 = model.addVars(combinations(machines, 2), jobs, vtype=GRB.BINARY, name="z_jobs")
     T = model.addVars(jobs, lb=0, vtype=GRB.INTEGER, name="T")
     
     return x, z, z1, T
@@ -354,7 +354,7 @@ def solve_scheduling_problem_gurobi(df, machine_columns):
     """Main Gurobi solver function."""
     tasks = df.to_dict('records')
     model = gp.Model("WeightedTardinessScheduling")
-    model.setParam("OutputFlag", 0)
+    model.setParam("OutputFlag", 1) # Enable Gurobi output logging for debugging
 
     # Set Gurobi parameters for tighter control
     model.Params.MIPGap = 0        # Ensure no relative gap
