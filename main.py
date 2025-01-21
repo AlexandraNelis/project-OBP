@@ -456,7 +456,7 @@ def build_gantt_chart(df_gantt, selection):
     return alt.Chart(df_gantt).mark_bar().encode(
         x=alt.X('Start:Q', title='Start Time'),
         x2=alt.X2('Finish:Q'),
-        y=alt.Y('Machine:N', sort='-x', title='Machine'),
+        y=alt.Y('Machine:N', sort='ascending', title='Machine'),
         color=alt.Color(
             'Task:N',
             title='Task',
