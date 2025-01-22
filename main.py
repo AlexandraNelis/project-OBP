@@ -518,12 +518,17 @@ elif option == "Option 2":
 
             
             # Optionally save results to a CSV
-            csv_data = performance_results.to_csv(index=False).encode("utf-8")
-            largest_set_data = largest_set.to_csv(index=False).encode("utf-8")
-            performance_url = create_download_link(csv_data, 'Performance results',"csv")
+            or_csv_data = or_performance_results.to_csv(index=False).encode("utf-8")
+            gur_csv_data = gur_performance_results.to_csv(index=False).encode("utf-8")
+
+            largest_set_data = combined_data.to_csv(index=False).encode("utf-8")
+            or_performance_url = create_download_link(or_csv_data, 'Performance results OR tools',"csv")
+            gur_performance_url = create_download_link(gur_csv_data, 'Performance results Gurobi',"csv")
+
             largest_set_url =create_download_link(largest_set_data,"Largest jobset","csv")
             graph_url = create_download_link(png_data,"Bar chart","png")
-            st.markdown(performance_url, unsafe_allow_html=True)
+            st.markdown(or_performance_url, unsafe_allow_html=True)
+            st.markdown(gur_performance_url, unsafe_allow_html=True)
             st.markdown(largest_set_url, unsafe_allow_html=True)
             st.markdown(graph_url, unsafe_allow_html=True)
 
