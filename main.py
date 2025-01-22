@@ -140,7 +140,7 @@ def solve_scheduling_problem(df, machine_columns):
     # Add time limit and other parameters to improve performance
     solver.parameters.max_time_in_seconds = 300.0  # 5 minute timeout
     solver.parameters.num_search_workers = 8  # Use multiple cores
-    solver.parameters.log_search_progress = True  # Enable logging for debugging
+    solver.parameters.log_search_progress = False  # If True, Enable logging for debugging
     
     start_time = time.time()
     status = solver.Solve(model)
@@ -353,7 +353,7 @@ def solve_scheduling_problem_gurobi(df, machine_columns):
     """Main Gurobi solver function."""
     tasks = df.to_dict('records')
     model = gp.Model("WeightedTardinessScheduling")
-    model.setParam("OutputFlag", 1) # Enable Gurobi output logging for debugging
+    model.setParam("OutputFlag", 0) # If 1, enable Gurobi output logging for debugging
 
     # Set Gurobi parameters for tighter control
     model.Params.MIPGap = 0        # Ensure no relative gap
@@ -452,26 +452,30 @@ def create_gantt_chart(schedule, input_data):
 
 def build_gantt_chart(df_gantt, selection):
     """Build and configure Altair chart object."""
-    return alt.Chart(df_gantt).mark_bar().encode(
+    chart = alt.Chart(df_gantt).mark_bar().encode(
         x=alt.X('Start:Q', title='Start Time'),
         x2=alt.X2('Finish:Q'),
-        y=alt.Y('Machine:N', sort='ascending', title='Machine'),
+        y=alt.Y('Machine:N', sort='-x', title='Machine'),
         color=alt.Color(
             'Task:N',
             title='Task',
             sort=alt.EncodingSortField(field='TaskID', order='ascending'),
-            scale=alt.Scale(scheme='turbo')
-        ),
+            scale=alt.Scale(scheme='turbo'), 
+            legend=alt.Legend(
+                title="Tasks",
+                symbolLimit=100,
+                orient="bottom",
+                labelFontSize=10,
+                titleFontSize=12,
+                labelLimit=2000,
+                columns=10,
+                direction="vertical")),
         opacity=alt.condition(selection, alt.value(1), alt.value(0.2)),
-        tooltip=[
-            'Task:N', 'Start:Q', 'Finish:Q', 'ReleaseDate:Q',
-            'DueDate:Q', 'Tardiness:Q', 'Weight:Q'
-        ]
-    ).properties(
-        title="Schedule Gantt Chart",
-        width=800,
-        height=600
-    ).add_params(selection)
+        tooltip=['Task:N','Start:Q','Finish:Q','ReleaseDate:Q','DueDate:Q','Tardiness:Q','Weight:Q']
+        ).properties(title="Schedule Gantt Chart", width=800, height=600
+    ).add_selection(selection)
+
+    return chart
 
 def setup_streamlit_ui():
     """Configure Streamlit UI layout."""
