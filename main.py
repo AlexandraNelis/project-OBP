@@ -126,143 +126,151 @@ def solve_gurobi_scheduling_problem(df, machine_columns):
     return results
 
 
-def solve_or_scheduling_problem(df, machine_columns):
-    """
-    Given a DataFrame `df` with columns:
-      - 'TaskID' (unique identifier)
-      - 'ReleaseDate'
-      - 'DueDate'
-      - 'Weight'
-      - columns in `machine_columns` for processing times on each machine
-
-    Returns:
-      A dictionary containing:
-        - 'status': solver status
-        - 'objective': objective function value (sum of weighted tardiness)
-        - 'schedule': list of dicts describing the schedule, with fields:
-            'task_id', 'finish_time', 'tardiness', 'machine_times'
-    """
-    tasks = df.to_dict('records')
-    model = cp_model.CpModel()
-
-    num_tasks = len(tasks)
-    machines = list(range(len(machine_columns)))  # e.g. [0,1,2] if there are 3 machine columns
-
-    # Build a 2D list for processing times: times[task_idx][machine_idx]
-    times = []
-    for t in tasks:
-        row_times = [t[col] for col in machine_columns]
-        times.append(row_times)
-
-    # Define horizon as sum of all processing times (a crude upper bound)
-    horizon = sum(sum(t_row) for t_row in times)
-
-    # Create variables: start, end, interval
-    start_task_per_machine_vars = {}
-    end_task_per_machine_vars = {}
-    end_task_vars = {}
-    intervals = {}
-
-    for t_idx in range(num_tasks):
+def create_model_variables(model, tasks, machines, machine_columns, horizon):
+    """Create and return all model variables."""
+    times = [[t[col] for col in machine_columns] for t in tasks]
+    
+    variables = {
+        'start': {},
+        'intervals': {},
+        'task_end': {},
+    }
+    
+    for t_idx in range(len(tasks)):
         for m_idx in machines:
             duration = times[t_idx][m_idx]
             
-            start_task_per_machine_var = model.NewIntVar(0, horizon, f'start_{t_idx}_m{m_idx}')
-            end_task_per_machine_var = model.NewIntVar(0, horizon, f'end_{t_idx}_m{m_idx}')
-            interval_var = model.NewIntervalVar(start_task_per_machine_var, duration, end_task_per_machine_var,
-                                                f'interval_{t_idx}_m{m_idx}')
-
-            start_task_per_machine_vars[(t_idx, m_idx)] = start_task_per_machine_var
-            end_task_per_machine_vars[(t_idx, m_idx)] = end_task_per_machine_var
-            intervals[(t_idx, m_idx)] = interval_var
-
-        end_task_var = model.NewIntVar(0, horizon, f'end_time_task{t_idx}')
-        end_task_vars[(t_idx)] = end_task_var
+            start_var = model.NewIntVar(0, horizon, f'start_{t_idx}_m{m_idx}')
+            interval_var = model.NewIntervalVar(
+                start_var, duration, start_var + duration, f'interval_{t_idx}_m{m_idx}'
+            )
+            
+            variables['start'][(t_idx, m_idx)] = start_var
+            variables['intervals'][(t_idx, m_idx)] = interval_var
         
+        variables['task_end'][t_idx] = model.NewIntVar(0, horizon, f'end_time_task{t_idx}')
+    
+    return variables, times
 
-    # Constraint 1: Ensure no 2 tasks overlap at the same machine
+def add_scheduling_constraints(model, tasks, machines, variables, times):
+    """Add all scheduling constraints to the model."""
+    # No overlap on machines
     for m_idx in machines:
-        machine_intervals = [intervals[(t_idx, m_idx)] for t_idx in range(num_tasks)]
+        machine_intervals = [variables['intervals'][(t_idx, m_idx)] 
+                           for t_idx in range(len(tasks))]
         model.AddNoOverlap(machine_intervals)
-
-
-    # Constraint 2: Ensure the same job is not processed on multiple machines simultaneously
-    for t_idx in range(num_tasks):
-        task_intervals = [intervals[(t_idx, m_idx)] for m_idx in machines]
+    
+    # No simultaneous processing
+    for t_idx in range(len(tasks)):
+        task_intervals = [variables['intervals'][(t_idx, m_idx)] 
+                         for m_idx in machines]
         model.AddNoOverlap(task_intervals)
-
-
-    # Constraint 3: The start time of a task, at each machine, should be later 
-    # than its release date
-    for t_idx in range(num_tasks):
+    
+    # Release date constraints
+    for t_idx in range(len(tasks)):
         for m_idx in machines:
-            model.Add(start_task_per_machine_vars[(t_idx, m_idx)] >= tasks[t_idx]['ReleaseDate'])
+            model.Add(variables['start'][(t_idx, m_idx)] >= 
+                     tasks[t_idx]['ReleaseDate'])
+    
+    # End time constraints
+    for t_idx in range(len(tasks)):
+        end_times_task = []
+        for m_idx in machines:
+            end_time = variables['start'][(t_idx, m_idx)] + times[t_idx][m_idx]
+            end_times_task.append(end_time)
+        model.AddMaxEquality(variables['task_end'][t_idx], end_times_task)
 
-    # Constraint 4: End time for each task is its maximum end time for all the machines
-    for t_idx in range(num_tasks):
-        end_times_task = [end_task_per_machine_vars[(t_idx, m_idx)] for m_idx in machines]
-        model.AddMaxEquality(end_task_vars[(t_idx)], end_times_task)
+
+def create_objective_variables(model, tasks, variables, horizon):
+    """Create and return tardiness variables for the objective function."""
+
+    weighted_tardiness = []
+    
+    for t_idx, task in enumerate(tasks):
+        due_date = task['DueDate']
+        weight = task['Weight']
+        
+        tardiness_var = model.NewIntVar(0, horizon, f'lateness_task{t_idx}')
+        model.Add(tardiness_var >= variables['task_end'][t_idx] - due_date)
+        model.Add(tardiness_var >= 0)
+        
+        weighted_tardiness.append(tardiness_var * weight)
+    
+    return weighted_tardiness
 
 
-    # Tardiness variables
-    tardiness_vars = []
-    for t_idx in range(num_tasks):
-        due_date = tasks[t_idx]['DueDate']
-        weight = tasks[t_idx]['Weight']
+def extract_solution(solver, tasks, machines, variables, times):
+    """Extract the solution from the solver."""
+    schedule = []
+    
+    for t_idx, task in enumerate(tasks):
+        task_end_time = solver.Value(variables['task_end'][t_idx])
+        tardiness = max(0, task_end_time - task['DueDate'])
+        machine_times = [
+        # Increment machine index by 1 for display purposes
+        (m_idx + 1,
+         solver.Value(variables['start'][(t_idx, m_idx)]),  # Start time from the solver
+         solver.Value(variables['start'][(t_idx, m_idx)]) + times[t_idx][m_idx])  # End time calculated as start + processing time
+        for m_idx in machines
+        ]
+        
+        schedule.append({
+            'task_id': task['TaskID'],
+            'finish_time': task_end_time,
+            'tardiness': tardiness,
+            'machine_times': machine_times,
+            'weight': task['Weight']
+        })
+    
+    return schedule
 
-        # lateness = max(0, finish - due_date)
-        # create an IntVar for lateness
-        lateness_var = model.NewIntVar(0, horizon, f'lateness_task{t_idx}')
-        model.Add(lateness_var >= end_task_vars[(t_idx)] - due_date)
-        model.Add(lateness_var >= 0)
 
-        # Weighted tardiness = weight * lateness
-        weighted_tardiness_var = model.NewIntVar(0, weight * horizon, f'wtardiness_task{t_idx}')
-        model.Add(weighted_tardiness_var == lateness_var * weight)
+def solve_scheduling_problem(df, machine_columns):
+    """
+    Optimized version of the scheduling problem Google CP-SAT solver.
+    """
+    tasks = df.to_dict('records')
+    machines = list(range(len(machine_columns)))
+    
+    # Calculate horizon
+    horizon = sum(
+    t['DueDate'] - t['ReleaseDate'] + sum(t[col] for col in machine_columns)
+    for t in tasks)
 
-        tardiness_vars.append(weighted_tardiness_var)
-
-    # Objective: minimize sum of weighted tardiness
+    # Initialize model
+    model = cp_model.CpModel()
+    
+    # Create variables
+    variables, times = create_model_variables(model, tasks, machines, 
+                                           machine_columns, horizon)
+    
+    # Add constraints
+    add_scheduling_constraints(model, tasks, machines, variables, times)
+    
+    # Create objective function
+    tardiness_vars = create_objective_variables(model, tasks, variables, horizon)
     model.Minimize(sum(tardiness_vars))
-
+    
     # Solve
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 60.0
+    
+    # Add time limit and other parameters to improve performance
+    solver.parameters.max_time_in_seconds = 60.0  # 5 minute timeout
+    solver.parameters.num_search_workers = 8  # Use multiple cores
+    solver.parameters.log_search_progress = True  # Enable logging for debugging
+    
     start_time = time.time()
     status = solver.Solve(model)
-    end_time = time.time()
-
-    print(end_time - start_time)
-
-    results = {
-        'status': status,
-        'objective': None,
-        'schedule': []
-    }
-
-    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+    solve_time = time.time() - start_time
+    
+    results = {'status': status, 'objective': None, 'schedule': [], 'solve_time': solve_time}
+    
+    if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         results['objective'] = solver.ObjectiveValue()
-
-        # Build output schedule info
-        for t_idx in range(num_tasks):
-            t_id = tasks[t_idx]['TaskID']
-            task_end_time = solver.Value(end_task_vars[(t_idx)])
-            tardiness = max(0, task_end_time - tasks[t_idx]['DueDate'])
-
-            machine_times = []
-            for m_idx in machines:
-                start_time = solver.Value(start_task_per_machine_vars[(t_idx, m_idx)])
-                end_time = solver.Value(end_task_per_machine_vars[(t_idx, m_idx)])
-                machine_times.append((m_idx, start_time, end_time))
-
-            results['schedule'].append({
-                'task_id': t_id,
-                'finish_time': task_end_time,
-                'tardiness': tardiness,
-                'machine_times': machine_times
-            })
-
+        results['schedule'] = extract_solution(solver, tasks, machines, variables, times)
+    
     return results
+
 
 
 def generate_test_case(num_jobs, num_machines):
@@ -307,7 +315,7 @@ def evaluate_solver():
                 st.write(f"trial {i+1}")
                 machine_columns = [f"Machine {i}" for i in range(1, num_machines + 1)]
                 start_time = time.time()
-                result = solve_or_scheduling_problem(df, machine_columns)
+                result = solve_scheduling_problem(df, machine_columns)
                 end_time = time.time()
                 solving_time =  end_time - start_time
                 if solving_time >= time_limit:
@@ -343,6 +351,93 @@ def evaluate_solver():
                     break          
     return pd.DataFrame(results),pd.DataFrame(list(largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"])
 
+def run_batch(df, machine_columns,solver,solving_set,time_limit):
+    start_time = time.time()
+    if solver:
+        result = solve_scheduling_problem(df, machine_columns)
+    else:
+        result = solve_gurobi_scheduling_problem(df,machine_columns)
+    end_time = time.time()
+    solving_time =  end_time - start_time
+    if solving_time >= time_limit:
+        solving_set.append((result,False,solving_time))
+        st.write(f"Not in time")
+    else:
+        solving_set.append((result,True,solving_time))
+        st.write(f"Within time")
+    return solving_set
+
+
+def compare_solvers(test_jobs,test_machines):
+    """
+    Run the solver with increasing job and machine sizes, and record results.
+    """
+    or_results = []
+    gur_results=[]
+      # Maximum number of machines to test
+    time_limit = 60  # Time limit in seconds
+    or_largest_set_of_jobs = {}
+    gur_largest_set_of_jobs = {}
+    batch = 5
+    
+    for num_machines in test_machines:
+        or_best_job = 0
+        gur_best_job = 0
+        or_largest_set_of_jobs[num_machines]=or_best_job    
+        gur_largest_set_of_jobs[num_machines]=gur_best_job     
+        for num_jobs in test_jobs:
+            st.write(f"Testing with {num_jobs} jobs and {num_machines} machines...")
+            df = generate_test_case(num_jobs, num_machines)
+            or_solving_set=[]
+            gur_solving_set=[]
+            Time_capped = False
+
+            for i in range(batch):#uneven number so the ratio will always tip to one side
+                st.write(f"trial {i+1}")
+                machine_columns = [f"Machine {i}" for i in range(1, num_machines + 1)]
+                or_solving_set = run_batch(df, machine_columns,True,or_solving_set,time_limit)
+                gur_solving_set = run_batch(df, machine_columns,False,gur_solving_set,time_limit)
+
+            or_false_count = sum(1 for _, is_false, _ in or_solving_set if not is_false)
+            gur_false_count =  sum(1 for _, is_false, _ in gur_solving_set if not is_false)
+            or_solving_set.sort(key=lambda x: not x[1])
+            gur_solving_set.sort(key=lambda x: not x[1])
+            if or_false_count > batch/2:#more than half of the tries failed at the instance
+                Time_capped = True
+                or_solving_set.sort(key=lambda x: x[1])
+            if gur_false_count > batch/2:#more than half of the tries failed at the instance
+                Time_capped = True
+                gur_solving_set.sort(key=lambda x: x[1])
+            
+            # Record performance
+            or_results.append({
+                "NumJobs": num_jobs,
+                "NumMachines": num_machines,
+                "SolverStatus": or_solving_set[0][0]["status"],
+                "ObjectiveValue": or_solving_set[0][0]["objective"],
+                "SolveTime":np.mean([time_value for _, condition, time_value in or_solving_set if condition!=Time_capped]),
+                "TimeCapped": Time_capped,
+                "Horizon": max(df["DueDate"])
+            })
+            gur_results.append({
+                "NumJobs": num_jobs,
+                "NumMachines": num_machines,
+                "SolverStatus": gur_solving_set[0][0]["status"],
+                "ObjectiveValue": gur_solving_set[0][0]["objective"],
+                "SolveTime":np.mean([time_value for _, condition, time_value in gur_solving_set if condition!=Time_capped]),
+                "TimeCapped": Time_capped,
+                "Horizon": max(df["DueDate"])
+            })
+            if  or_results[-1]['SolveTime']<=time_limit:
+                or_best_job = num_jobs
+            if  gur_results[-1]['SolveTime']<=time_limit:
+                gur_best_job = num_jobs
+            
+            or_largest_set_of_jobs[num_machines] = or_best_job
+            gur_largest_set_of_jobs[num_machines] = or_best_job
+    return pd.DataFrame(or_results),pd.DataFrame(gur_results),pd.DataFrame(gur_results),pd.DataFrame(list(or_largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"]),pd.DataFrame(list(gur_largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"])
+
+
 
 def create_download_link(val, filename,type):
     if type=="png":
@@ -352,37 +447,90 @@ def create_download_link(val, filename,type):
         b64 = base64.b64encode(val)
         return f'<a href="data:application/octet-stream;base64,{b64.decode()}" download="{filename}.{type}">Download {filename}</a>'
 
+
+
+option = st.selectbox(
+    "Choose an option:",  # Label for the dropdown
+    ["Option 1", "Option 2"]  # List of options
+)
+if option == "Option 1":
+    st.write("You chose Option 1! 🎉")
+    if st.button("Run Solver Performance Tests"):
+        with st.spinner("Running tests..."):
+            performance_results,largest_set = evaluate_solver()
+            st.markdown("### Performance Results")
+            st.dataframe(performance_results)
+            st.markdown("### Largest number of jobs per machine")
+            st.dataframe(largest_set)
+            st.bar_chart(largest_set, x = 'Number of machines', y = 'Number of jobs', x_label= "number of machines", y_label= "number of jobs")
+            graph_data =largest_set.set_index('Number of machines')
+            fig, ax = plt.subplots()
+            graph_data.plot(kind="bar", ax=ax, legend=False)
+            ax.set_title("Maximum number of jobs solvable for number of machines")
+            ax.set_xlabel("Number of machines")
+            ax.set_ylabel("Number of jobs")
+
+            # Save the chart to a buffer for downloading
+            buffer = io.BytesIO()
+            fig.savefig(buffer, format="png")
+            buffer.seek(0)
+            png_data= buffer.getvalue()
+
+            
+            # Optionally save results to a CSV
+            csv_data = performance_results.to_csv(index=False).encode("utf-8")
+            largest_set_data = largest_set.to_csv(index=False).encode("utf-8")
+            performance_url = create_download_link(csv_data, 'Performance results',"csv")
+            largest_set_url =create_download_link(largest_set_data,"Largest jobset","csv")
+            graph_url = create_download_link(png_data,"Bar chart","png")
+            st.markdown(performance_url, unsafe_allow_html=True)
+            st.markdown(largest_set_url, unsafe_allow_html=True)
+            st.markdown(graph_url, unsafe_allow_html=True)
+
+elif option == "Option 2":
+    st.write("You chose Option 2! 🚀")
+    if st.button("Run Comparison solver Tests"):
+        with st.spinner("Running tests..."):
+            test_jobs = [10,20,30]
+            test_machines = [2,5,10,15,20]
+            or_performance_results,or_largest_set,gur_performance_results,gur_largest_set = compare_solvers(test_jobs,test_machines)
+            st.markdown("### Performance Results")
+            st.dataframe(or_performance_results)
+            st.dataframe(gur_performance_results)
+            st.markdown("### Largest number of jobs per machine")
+            combined_data = pd.DataFrame({
+                "Category": or_largest_set["Number of machines"],
+                "Jobs OR": or_largest_set["Number of jobs"],
+                "Jobs Gurobi": gur_largest_set["Number of jobs"]
+            })
+            st.dataframe(or_largest_set)
+            st.dataframe(gur_largest_set)
+            st.dataframe(combined_data)
+            st.bar_chart(combined_data, x = 'Number of machines', y = 'Number of jobs', x_label= "number of machines", y_label= "number of jobs")
+
+            graph_data =combined_data.set_index('Number of machines')
+            fig, ax = plt.subplots()
+            graph_data.plot(kind="bar", ax=ax, legend=False)
+            ax.set_title("Comparison of OR tools and Gurobi")
+            ax.set_xlabel("Number of machines")
+            ax.set_ylabel("Number of jobs")
+
+            # Save the chart to a buffer for downloading
+            buffer = io.BytesIO()
+            fig.savefig(buffer, format="png")
+            buffer.seek(0)
+            png_data= buffer.getvalue()
+
+            
+            # Optionally save results to a CSV
+            csv_data = performance_results.to_csv(index=False).encode("utf-8")
+            largest_set_data = largest_set.to_csv(index=False).encode("utf-8")
+            performance_url = create_download_link(csv_data, 'Performance results',"csv")
+            largest_set_url =create_download_link(largest_set_data,"Largest jobset","csv")
+            graph_url = create_download_link(png_data,"Bar chart","png")
+            st.markdown(performance_url, unsafe_allow_html=True)
+            st.markdown(largest_set_url, unsafe_allow_html=True)
+            st.markdown(graph_url, unsafe_allow_html=True)
+
+
 # Run and display the evaluation results
-if st.button("Run Solver Performance Tests"):
-    with st.spinner("Running tests..."):
-        performance_results,largest_set = evaluate_solver()
-        st.markdown("### Performance Results")
-        st.dataframe(performance_results)
-        st.markdown("### Largest number of jobs per machine")
-        st.dataframe(largest_set)
-        st.bar_chart(largest_set, x = 'Number of machines', y = 'Number of jobs', x_label= "number of machines", y_label= "number of jobs")
-        graph_data =largest_set.set_index('Number of machines')
-        fig, ax = plt.subplots()
-        graph_data.plot(kind="bar", ax=ax, legend=False)
-        ax.set_title("Maximum number of jobs solvable for number of machines")
-        ax.set_xlabel("Number of machines")
-        ax.set_ylabel("Number of jobs")
-
-        # Save the chart to a buffer for downloading
-        buffer = io.BytesIO()
-        fig.savefig(buffer, format="png")
-        buffer.seek(0)
-        png_data= buffer.getvalue()
-
-        
-        # Optionally save results to a CSV
-        csv_data = performance_results.to_csv(index=False).encode("utf-8")
-        largest_set_data = largest_set.to_csv(index=False).encode("utf-8")
-        performance_url = create_download_link(csv_data, 'Performance results',"csv")
-        largest_set_url =create_download_link(largest_set_data,"Largest jobset","csv")
-        graph_url = create_download_link(png_data,"Bar chart","png")
-        st.markdown(performance_url, unsafe_allow_html=True)
-        st.markdown(largest_set_url, unsafe_allow_html=True)
-        st.markdown(graph_url, unsafe_allow_html=True)
-
-        
