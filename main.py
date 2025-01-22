@@ -518,7 +518,7 @@ elif option == "Option 2":
             # Display the Altair chart in Streamlit
             st.altair_chart(chart, use_container_width=True)
             
-            graph_data =combined_data.set_index('Number of machines')
+            graph_data =combined_data_melted.set_index('Number of machines')
             fig, ax = plt.subplots()
             graph_data.plot(kind="bar", ax=ax, legend=False)
             ax.set_title("Comparison of OR tools and Gurobi")
