@@ -116,11 +116,10 @@ def solve_scheduling_problem(df, machine_columns):
     machines = list(range(len(machine_columns)))
     
     # Calculate horizon
-    horizon = max(
-        max(t['DueDate'] for t in tasks),
-        sum(max(t[col] for col in machine_columns) for t in tasks)
-    )
-    
+    horizon = sum(
+    t['DueDate'] - t['ReleaseDate'] + sum(t[col] for col in machine_columns)
+    for t in tasks)
+
     # Initialize model
     model = cp_model.CpModel()
     
