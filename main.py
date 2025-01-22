@@ -353,9 +353,9 @@ def evaluate_solver():
 
 def run_batch(df, machine_columns,solver,solving_set,time_limit):
     start_time = time.time()
-    if solver:
+    if solver:#or tools
         result = solve_scheduling_problem(df, machine_columns)
-    else:
+    else:# gurobi
         result = solve_gurobi_scheduling_problem(df,machine_columns)
     end_time = time.time()
     solving_time =  end_time - start_time
@@ -369,17 +369,12 @@ def run_batch(df, machine_columns,solver,solving_set,time_limit):
 
 
 def compare_solvers(test_jobs,test_machines):
-    """
-    Run the solver with increasing job and machine sizes, and record results.
-    """
     or_results = []
     gur_results=[]
-      # Maximum number of machines to test
-    time_limit = 60  # Time limit in seconds
+    time_limit = 60 
     or_largest_set_of_jobs = {}
     gur_largest_set_of_jobs = {}
     batch = 5
-    
     for num_machines in test_machines:
         or_best_job = 0
         gur_best_job = 0
@@ -390,8 +385,8 @@ def compare_solvers(test_jobs,test_machines):
             df = generate_test_case(num_jobs, num_machines)
             or_solving_set=[]
             gur_solving_set=[]
-            Time_capped = False
-
+            or_Time_capped = False
+            gur_Time_capped = False
             for i in range(batch):#uneven number so the ratio will always tip to one side
                 st.write(f"trial {i+1}")
                 machine_columns = [f"Machine {i}" for i in range(1, num_machines + 1)]
@@ -403,10 +398,10 @@ def compare_solvers(test_jobs,test_machines):
             or_solving_set.sort(key=lambda x: not x[1])
             gur_solving_set.sort(key=lambda x: not x[1])
             if or_false_count > batch/2:#more than half of the tries failed at the instance
-                Time_capped = True
+                or_Time_capped = True
                 or_solving_set.sort(key=lambda x: x[1])
             if gur_false_count > batch/2:#more than half of the tries failed at the instance
-                Time_capped = True
+                gur_Time_capped = True
                 gur_solving_set.sort(key=lambda x: x[1])
             
             # Record performance
@@ -415,8 +410,8 @@ def compare_solvers(test_jobs,test_machines):
                 "NumMachines": num_machines,
                 "SolverStatus": or_solving_set[0][0]["status"],
                 "ObjectiveValue": or_solving_set[0][0]["objective"],
-                "SolveTime":np.mean([time_value for _, condition, time_value in or_solving_set if condition!=Time_capped]),
-                "TimeCapped": Time_capped,
+                "SolveTime":np.mean([time_value for _, condition, time_value in or_solving_set if condition!=or_Time_capped]),
+                "TimeCapped": or_Time_capped,
                 "Horizon": max(df["DueDate"])
             })
             gur_results.append({
@@ -424,8 +419,8 @@ def compare_solvers(test_jobs,test_machines):
                 "NumMachines": num_machines,
                 "SolverStatus": gur_solving_set[0][0]["status"],
                 "ObjectiveValue": gur_solving_set[0][0]["objective"],
-                "SolveTime":np.mean([time_value for _, condition, time_value in gur_solving_set if condition!=Time_capped]),
-                "TimeCapped": Time_capped,
+                "SolveTime":np.mean([time_value for _, condition, time_value in gur_solving_set if condition!=gur_Time_capped]),
+                "TimeCapped": gur_Time_capped,
                 "Horizon": max(df["DueDate"])
             })
             if  or_results[-1]['SolveTime']<=time_limit:
