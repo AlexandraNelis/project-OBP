@@ -532,8 +532,8 @@ def handle_solution_download(results_df, input_df):
         label="Download Schedule as Excel",
         data=output_bytes,
         file_name="schedule_solution.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        
 
 def display_validation_results(validation_results):
     """Display schedule validation results."""
@@ -615,6 +615,7 @@ def main():
                     results = solve_scheduling_problem_gurobi(df, machine_columns)
 
             if results["status"] in [cp_model.OPTIMAL, cp_model.FEASIBLE, GRB.OPTIMAL, GRB.SUBOPTIMAL]:
+                st.balloons()
                 st.success(f"Solution found! Total Weighted Tardiness = {results['objective']:.1f}")
 
                 with st.expander("Gantt Chart", expanded=True):
