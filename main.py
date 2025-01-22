@@ -430,7 +430,7 @@ def format_gantt_data(schedule, input_data):
         
         for machine_num, start, end in entry['machine_times']:
             chart_data.append({
-                'Task': f"Task {task_id}",
+                'Task': f"{task_id}",
                 'Machine': f"M{machine_num}",
                 'Start': start,
                 'Finish': end,
