@@ -430,7 +430,7 @@ def compare_solvers(test_jobs,test_machines):
             
             or_largest_set_of_jobs[num_machines] = or_best_job
             gur_largest_set_of_jobs[num_machines] = or_best_job
-    return pd.DataFrame(or_results),pd.DataFrame(gur_results),pd.DataFrame(gur_results),pd.DataFrame(list(or_largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"]),pd.DataFrame(list(gur_largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"])
+    return pd.DataFrame(or_results),pd.DataFrame(gur_results),pd.DataFrame(list(or_largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"]),pd.DataFrame(list(gur_largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"])
 
 
 
@@ -486,23 +486,38 @@ elif option == "Option 2":
     st.write("You chose Option 2! 🚀")
     if st.button("Run Comparison solver Tests"):
         with st.spinner("Running tests..."):
-            test_jobs = [10,20,30]
-            test_machines = [2,5,10,15,20]
-            or_performance_results,or_largest_set,gur_performance_results,gur_largest_set = compare_solvers(test_jobs,test_machines)
+            test_jobs = [2,3]
+            test_machines = [2,5]
+            or_performance_results,gur_performance_results,or_largest_set,gur_largest_set = compare_solvers(test_jobs,test_machines)
             st.markdown("### Performance Results")
             st.dataframe(or_performance_results)
             st.dataframe(gur_performance_results)
+            print(or_largest_set)
+            print(gur_largest_set)
             st.markdown("### Largest number of jobs per machine")
-            combined_data = pd.DataFrame({
-                "Category": or_largest_set["Number of machines"],
-                "Jobs OR": or_largest_set["Number of jobs"],
-                "Jobs Gurobi": gur_largest_set["Number of jobs"]
-            })
-            st.dataframe(or_largest_set)
-            st.dataframe(gur_largest_set)
-            st.dataframe(combined_data)
-            st.bar_chart(combined_data, x = 'Number of machines', y = 'Number of jobs', x_label= "number of machines", y_label= "number of jobs")
+            
 
+            combined_data = pd.merge(or_largest_set, gur_largest_set, on="Number of machines")
+
+            # Reshape the DataFrame to a long format
+            combined_data_melted = combined_data.melt(id_vars=["Number of machines"], var_name="Solver", value_name="Number of jobs")
+
+            # Display the DataFrame
+            st.write(combined_data_melted)  # Optional: View the transformed DataFrame
+
+            # Create a grouped bar chart using Altair
+            chart = alt.Chart(combined_data_melted).mark_bar().encode(
+                x=alt.X("Number of machines:O", title="Number of Machines"),  # Convert to categorical
+                y=alt.Y("Number of jobs:Q", title="Number of Jobs"),
+                color="Solver:N",  # Color by solver
+                xOffset="Solver:N"  # Offset bars to make them appear side by side
+            ).properties(
+                width=100  # Adjust width for clarity
+            )
+
+            # Display the Altair chart in Streamlit
+            st.altair_chart(chart, use_container_width=True)
+            
             graph_data =combined_data.set_index('Number of machines')
             fig, ax = plt.subplots()
             graph_data.plot(kind="bar", ax=ax, legend=False)
