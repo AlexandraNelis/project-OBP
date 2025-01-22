@@ -7,6 +7,7 @@ import gurobipy as gp
 from gurobipy import GRB, quicksum
 from itertools import combinations
 from ortools.sat.python import cp_model
+from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode
 
 
 def create_model_variables(model, tasks, machines, machine_columns, horizon):
@@ -455,7 +456,7 @@ def build_gantt_chart(df_gantt, selection):
     chart = alt.Chart(df_gantt).mark_bar().encode(
         x=alt.X('Start:Q', title='Start Time'),
         x2=alt.X2('Finish:Q'),
-        y=alt.Y('Machine:N', sort='-x', title='Machine'),
+        y=alt.Y('Machine:N', sort='ascending', title='Machine'),
         color=alt.Color(
             'Task:N',
             title='Task',
@@ -484,7 +485,25 @@ def setup_streamlit_ui():
         page_icon="🛠️",
         layout="wide"
     )
-    
+
+def show_upload_instructions():
+    """Display file upload instructions."""
+    st.markdown(
+        """
+        **Instructions**  
+        1. Upload an Excel file (.xlsx) **or** switch to Manual Input below.  
+        2. Required columns:
+           - **TaskID** (unique identifier)
+           - **ReleaseDate**
+           - **DueDate**
+           - **Weight**
+           - **M1Time**, **M2Time**, etc. *(processing times on each machine)*  
+        3. Configure detected machine columns in the sidebar.  
+        4. Click **Solve Scheduling Problem**.
+        """
+    )
+    st.info("Ensure your file follows the required format to avoid errors.")
+
 def setup_sidebar():
     """Configure and return sidebar elements."""
     with st.sidebar:
@@ -502,48 +521,6 @@ def setup_sidebar():
         st.markdown("---")
         
     return uploaded_file, solver_choice
-
-def show_upload_instructions():
-    """Display file upload instructions."""
-    st.markdown(
-        """
-        1. Upload an Excel file (.xlsx) with the following columns:
-           - **TaskID** (unique identifier)
-           - **ReleaseDate**
-           - **DueDate**
-           - **Weight**
-           - **M1Time**, **M2Time**, etc.  \n
-              *(processing times on each machine)*
-        2. Configure detected machine columns below.
-        3. Click **Solve Scheduling Problem** to optimize the schedule.
-        """
-    )
-    st.info("Ensure your file follows the required format to avoid errors.")
-
-def handle_solution_download(results_df, input_df):
-    """Handle solution download functionality."""
-    output_bytes = io.BytesIO()
-    with pd.ExcelWriter(output_bytes, engine="openpyxl") as writer:
-        results_df.to_excel(writer, index=False, sheet_name="Schedule")
-        input_df.to_excel(writer, index=False, sheet_name="InputData")
-    output_bytes.seek(0)
-    
-    st.download_button(
-        label="Download Schedule as Excel",
-        data=output_bytes,
-        file_name="schedule_solution.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        
-
-def display_validation_results(validation_results):
-    """Display schedule validation results."""
-    for constraint, (is_satisfied, message) in validation_results.items():
-        if is_satisfied:
-            st.markdown(f"- **{constraint.replace('_', ' ').capitalize()}**: Satisfied ✅")
-        else:
-            st.markdown(f"- **{constraint.replace('_', ' ').capitalize()}**: Not satisfied ❌")
-            st.text(f"    {message}")
-
 
 def schedule_to_dataframe(schedule):
     """
@@ -567,6 +544,28 @@ def schedule_to_dataframe(schedule):
             })
     return pd.DataFrame(rows)
 
+def display_validation_results(validation_results):
+    """Display schedule validation results."""
+    for constraint, (is_satisfied, message) in validation_results.items():
+        if is_satisfied:
+            st.markdown(f"- **{constraint.replace('_', ' ').capitalize()}**: Satisfied ✅")
+        else:
+            st.markdown(f"- **{constraint.replace('_', ' ').capitalize()}**: Not satisfied ❌")
+            st.text(f"    {message}")
+
+def handle_solution_download(results_df, input_df):
+    """Handle solution download functionality."""
+    output_bytes = io.BytesIO()
+    with pd.ExcelWriter(output_bytes, engine="openpyxl") as writer:
+        results_df.to_excel(writer, index=False, sheet_name="Schedule")
+        input_df.to_excel(writer, index=False, sheet_name="InputData")
+    output_bytes.seek(0)
+    
+    st.download_button(
+        label="Download Schedule as Excel",
+        data=output_bytes,
+        file_name="schedule_solution.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 def main():
     setup_streamlit_ui()
@@ -575,57 +574,149 @@ def main():
     st.title("Multi-Machine Scheduling Optimizer")
     st.markdown(
         """
-        Optimize your multi-machine scheduling tasks to minimize total **weighted tardiness**.  \n
-        Use the **sidebar** to upload data and configure settings.
+        Optimize your multi-machine scheduling tasks to minimize total **weighted tardiness**.  
+        Use the **sidebar** to upload data or click below to **manually input data**.
         """
     )
 
-    if uploaded_file is not None:
-        try:
-            df = pd.read_excel(uploaded_file)
-            df.columns = df.columns.map(str)
-        except Exception as e:
-            st.error(f"Error reading the file: {e}")
-            return
+    # -- Add a toggle for manual data input --
+    if "manual_mode" not in st.session_state:
+        st.session_state["manual_mode"] = False
 
-        # Validate input data
-        is_valid, error_message = validate_input_data(df)
-        if not is_valid:
-            st.error(error_message)
-            return
+    col1, col2 = st.columns([2, 2])
+    
+    with col1:
+        # Switch between manual input and file upload
+        if not st.session_state["manual_mode"]:
+            if st.button("Switch to Manual Data Input"):
+                st.session_state["manual_mode"] = True
+        else:
+            if st.button("Switch to File Upload Mode"):
+                st.session_state["manual_mode"] = False
 
-        st.markdown("### Input Data Preview")
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    # -------------------- MANUAL MODE --------------------
+    if st.session_state["manual_mode"]:
+        st.subheader("Manual Data Input (AgGrid)")
 
-        # Configure machine columns
-        with st.sidebar:
-            st.title("Configure Machine Columns")
-            machine_columns = st.multiselect(
-                "Select Machine Columns (in order):",
-                identify_machine_columns(df),
-                default=identify_machine_columns(df)
-            )
-            st.markdown("---")
+        # Initialize a DataFrame in session_state if not present
+        if "manual_df" not in st.session_state:
+            # Start with just 1 row, TaskID=1
+            df_init = pd.DataFrame({
+                "TaskID": [1],
+                "ReleaseDate": [None],
+                "DueDate": [None],
+                "Weight": [None],
+                "M1Time": [None],
+                "M2Time": [None],
+                "M3Time": [None]
+            })
+            st.session_state["manual_df"] = df_init
 
+        # Buttons to add more row / add new machine columns
+        row_col1, row_col2 = st.columns(2)
+        with row_col1:
+            if st.button("Add 1 More Row"):
+                current_df = st.session_state["manual_df"]
+                if "TaskID" in current_df.columns:
+                    max_id = current_df["TaskID"].max()
+                    if pd.isna(max_id):
+                        max_id = 0
+                    new_id = max_id + 1
+                else:
+                    new_id = 1  # fallback
+                
+                new_row = {
+                    "TaskID": new_id,
+                    "ReleaseDate": None,
+                    "DueDate": None,
+                    "Weight": None,
+                    "M1Time": None,
+                    "M2Time": None,
+                    "M3Time": None
+                }
+                st.session_state["manual_df"] = pd.concat(
+                    [current_df, pd.DataFrame([new_row])], 
+                    ignore_index=True
+                )
+
+        with row_col2:
+            if st.button("Add Another Machine Column"):
+                # Count how many columns already start with 'M' and end with 'Time'
+                machine_cols = identify_machine_columns(st.session_state["manual_df"])
+                next_machine_index = len(machine_cols) + 1
+                new_col = f"M{next_machine_index}Time"
+                st.session_state["manual_df"][new_col] = None
+
+        # Build AgGrid options
+        gb = GridOptionsBuilder.from_dataframe(st.session_state["manual_df"])
+        gb.configure_default_column(editable=True, groupable=True)
+        # Attempt to reduce "double-typing" by forcing cell editing to end on blur
+        gb.configure_grid_options(stopEditingWhenCellsLoseFocus=True)
+        gb_options = gb.build()
+
+        st.info("Edit your data below. Scroll horizontally for more columns if needed.")
+
+        # Display data in AgGrid
+        aggrid_return = AgGrid(
+            st.session_state["manual_df"],
+            gridOptions=gb_options,
+            data_return_mode=DataReturnMode.AS_INPUT,
+            update_mode=GridUpdateMode.VALUE_CHANGED,
+            fit_columns_on_grid_load=True,
+            theme="balham",
+            enable_enterprise_modules=False
+        )
+
+        # Update session_state with edited data
+        updated_df = pd.DataFrame(aggrid_return["data"])
+        st.session_state["manual_df"] = updated_df
+
+        # Solve scheduling problem
         if st.button("Solve Scheduling Problem"):
+            df = st.session_state["manual_df"].copy()
+
+            # Validate input data
+            is_valid, error_message = validate_input_data(df)
+            if not is_valid:
+                st.error(error_message)
+                return
+
+            # Show a preview
+            st.markdown("### Input Data Preview")
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+            # Configure machine columns
+            with st.sidebar:
+                st.title("Configure Machine Columns")
+                machine_columns = st.multiselect(
+                    "Select Machine Columns (in order):",
+                    identify_machine_columns(df),
+                    default=identify_machine_columns(df)
+                )
+                st.markdown("---")
+
             with st.spinner(f"Solving the scheduling problem with {solver_choice}..."):
                 if solver_choice == "OR-Tools":
                     results = solve_scheduling_problem(df, machine_columns)
                 else:
                     results = solve_scheduling_problem_gurobi(df, machine_columns)
 
+            # Check solver status
             if results["status"] in [cp_model.OPTIMAL, cp_model.FEASIBLE, GRB.OPTIMAL, GRB.SUBOPTIMAL]:
                 st.balloons()
                 st.success(f"Solution found! Total Weighted Tardiness = {results['objective']:.1f}")
 
+                # Gantt Chart
                 with st.expander("Gantt Chart", expanded=True):
                     fig_gantt = create_gantt_chart(results["schedule"], df)
                     st.altair_chart(fig_gantt, use_container_width=True)
 
+                # Detailed schedule
                 with st.expander("Detailed Schedule"):
                     results_df = schedule_to_dataframe(results["schedule"])
                     st.dataframe(results_df, use_container_width=True, hide_index=True)
 
+                # Validation results
                 with st.expander("Validation Results"):
                     validation_results = validate_schedule(
                         results["schedule"], df, machine_columns, solver_choice, results["status"]
@@ -636,8 +727,68 @@ def main():
                 handle_solution_download(results_df, df)
             else:
                 st.error("No feasible solution found. Please check your input data.")
-    else:
-        st.info("Upload an Excel file to start.")
 
+    # -------------------- FILE UPLOAD MODE --------------------
+    else:
+        if uploaded_file is not None:
+            try:
+                df = pd.read_excel(uploaded_file)
+                df.columns = df.columns.map(str)  # ensure string columns
+            except Exception as e:
+                st.error(f"Error reading the file: {e}")
+                return
+
+            # Validate input data
+            is_valid, error_message = validate_input_data(df)
+            if not is_valid:
+                st.error(error_message)
+                return
+
+            st.markdown("### Input Data Preview")
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+            # Configure machine columns
+            with st.sidebar:
+                st.title("Configure Machine Columns")
+                machine_columns = st.multiselect(
+                    "Select Machine Columns (in order):",
+                    identify_machine_columns(df),
+                    default=identify_machine_columns(df)
+                )
+                st.markdown("---")
+
+            if st.button("Solve Scheduling Problem"):
+                with st.spinner(f"Solving the scheduling problem with {solver_choice}..."):
+                    if solver_choice == "OR-Tools":
+                        results = solve_scheduling_problem(df, machine_columns)
+                    else:
+                        results = solve_scheduling_problem_gurobi(df, machine_columns)
+
+                if results["status"] in [cp_model.OPTIMAL, cp_model.FEASIBLE, GRB.OPTIMAL, GRB.SUBOPTIMAL]:
+                    st.balloons()
+                    st.success(f"Solution found! Total Weighted Tardiness = {results['objective']:.1f}")
+
+                    with st.expander("Gantt Chart", expanded=True):
+                        fig_gantt = create_gantt_chart(results["schedule"], df)
+                        st.altair_chart(fig_gantt, use_container_width=True)
+
+                    with st.expander("Detailed Schedule"):
+                        results_df = schedule_to_dataframe(results["schedule"])
+                        st.dataframe(results_df, use_container_width=True, hide_index=True)
+
+                    with st.expander("Validation Results"):
+                        validation_results = validate_schedule(
+                            results["schedule"], df, machine_columns, solver_choice, results["status"]
+                        )
+                        display_validation_results(validation_results)
+
+                    st.markdown("### Download Solution")
+                    handle_solution_download(results_df, df)
+                else:
+                    st.error("No feasible solution found. Please check your input data.")
+        else:
+            st.info("Upload an Excel file in the sidebar or switch to Manual Data Input.")
+
+# Run the app
 if __name__ == "__main__":
     main()
