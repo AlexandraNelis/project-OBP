@@ -480,7 +480,7 @@ def build_gantt_chart(df_gantt, selection):
 def setup_streamlit_ui():
     """Configure Streamlit UI layout."""
     st.set_page_config(
-        page_title="TEST Multi-Machine Scheduling Optimizer",
+        page_title="Multi-Machine Scheduling Optimizer",
         page_icon="🛠️",
         layout="wide"
     )
