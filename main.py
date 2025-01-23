@@ -579,42 +579,20 @@ def main():
         """
     )
 
-    # # -- Add a toggle for manual data input --
-    # if "manual_mode" not in st.session_state:
-    #     st.session_state["manual_mode"] = False
-
-    # col1, col2 = st.columns([2, 2])
-    
-    # with col1:
-    #     # Switch between manual input and file upload
-    #     if not st.session_state["manual_mode"]:
-    #         if st.button("Switch to Manual Data Input"):
-    #             st.session_state["manual_mode"] = True
-    #     else:
-    #         if st.button("Switch to File Upload Mode"):
-    #             st.session_state["manual_mode"] = False
-
     # -- Add a toggle for manual data input --
     if "manual_mode" not in st.session_state:
         st.session_state["manual_mode"] = False
 
     col1, col2 = st.columns([2, 2])
-
+    
     with col1:
         # Switch between manual input and file upload
         if not st.session_state["manual_mode"]:
-            # Use st.button and set session state immediately
             if st.button("Switch to Manual Data Input"):
                 st.session_state["manual_mode"] = True
-                st.experimental_rerun()  # This should be removed and handled more gracefully
         else:
-            # Use st.button and set session state immediately
             if st.button("Switch to File Upload Mode"):
                 st.session_state["manual_mode"] = False
-                # Instead of rerunning the page, use st.empty() or st.write()
-                st.empty()  # Clear the element to reflect the change immediately.
-
-
 
     # -------------------- MANUAL MODE --------------------
     if st.session_state["manual_mode"]:
