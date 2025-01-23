@@ -574,7 +574,7 @@ def main():
     st.title("Multi-Machine Scheduling Optimizer")
     st.markdown(
         """
-        Optimize your multi-machine scheduling tasks to minimize total **weighted tardiness**.  
+        test Optimize your multi-machine scheduling tasks to minimize total **weighted tardiness**.  
         Use the **sidebar** to upload data or click below to **manually input data**.
         """
     )
@@ -585,14 +585,24 @@ def main():
 
     col1, col2 = st.columns([2, 2])
     
+    # with col1:
+    #     # Switch between manual input and file upload
+    #     if not st.session_state["manual_mode"]:
+    #         if st.button("Switch to Manual Data Input"):
+    #             st.session_state["manual_mode"] = True
+    #     else:
+    #         if st.button("Switch to File Upload Mode"):
+    #             st.session_state["manual_mode"] = False
+
+    # -- Replace the toggle button logic with a radio button --
     with col1:
-        # Switch between manual input and file upload
-        if not st.session_state["manual_mode"]:
-            if st.button("Switch to Manual Data Input"):
-                st.session_state["manual_mode"] = True
+        mode = st.radio("Select Mode", options=["File Upload Mode", "Manual Data Input"], index=0 if not st.session_state["manual_mode"] else 1)
+
+        if mode == "Manual Data Input":
+            st.session_state["manual_mode"] = True
         else:
-            if st.button("Switch to File Upload Mode"):
-                st.session_state["manual_mode"] = False
+            st.session_state["manual_mode"] = False
+
 
     # -------------------- MANUAL MODE --------------------
     if st.session_state["manual_mode"]:
