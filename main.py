@@ -579,45 +579,40 @@ def main():
         """
     )
 
+    # # -- Add a toggle for manual data input --
+    # if "manual_mode" not in st.session_state:
+    #     st.session_state["manual_mode"] = False
+
+    # col1, col2 = st.columns([2, 2])
+    
+    # with col1:
+    #     # Switch between manual input and file upload
+    #     if not st.session_state["manual_mode"]:
+    #         if st.button("Switch to Manual Data Input"):
+    #             st.session_state["manual_mode"] = True
+    #     else:
+    #         if st.button("Switch to File Upload Mode"):
+    #             st.session_state["manual_mode"] = False
+
     # -- Add a toggle for manual data input --
     if "manual_mode" not in st.session_state:
         st.session_state["manual_mode"] = False
 
     col1, col2 = st.columns([2, 2])
-    
+
     with col1:
         # Switch between manual input and file upload
         if not st.session_state["manual_mode"]:
+            # Use st.button and set session state immediately
             if st.button("Switch to Manual Data Input"):
                 st.session_state["manual_mode"] = True
+                st.experimental_rerun()  # Force a page rerun to update the UI immediately
         else:
+            # Use st.button and set session state immediately
             if st.button("Switch to File Upload Mode"):
                 st.session_state["manual_mode"] = False
+                st.experimental_rerun()  # Force a page rerun to update the UI immediately
 
-    # # -- Replace the toggle button logic with a radio button --
-    # with col1:
-    #     mode = st.radio("Select Mode", options=["File Upload Mode", "Manual Data Input"], index=0 if not st.session_state["manual_mode"] else 1)
-
-    #     if mode == "Manual Data Input":
-    #         st.session_state["manual_mode"] = True
-    #     else:
-    #         st.session_state["manual_mode"] = False
-
-    # # -- Add a radio button for mode selection --
-    # with col1:
-    # # Ensure that the radio button's default is set based on session_state
-    #     mode = st.radio(
-    #         "Select Mode",
-    #         options=["File Upload Mode", "Manual Data Input"],
-    #         index=0 if not st.session_state.get("manual_mode", False) else 1
-    #     )
-    
-    #     # Update session_state based on the radio selection
-    #     if mode == "Manual Data Input":
-    #         st.session_state["manual_mode"] = True
-    #     else:
-    #         st.session_state["manual_mode"] = False
-        
 
     # -------------------- MANUAL MODE --------------------
     if st.session_state["manual_mode"]:
