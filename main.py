@@ -509,7 +509,7 @@ def setup_sidebar():
     with st.sidebar:
         st.title("Upload task data")
         show_upload_instructions()
-        uploaded_file = st.file_uploader("Upload your data file:", type=["xlsx"])
+        uploaded_file = st.file_uploader("Upload your data file:", type=["xlsx"], help="Upload data through an Excel file for which you want to optimize a schedule.")
         st.markdown("---")
         
         st.title("Select solver")
@@ -596,7 +596,7 @@ def main():
 
     # -------------------- MANUAL MODE --------------------
     if st.session_state["manual_mode"]:
-        st.subheader("Manual Data Input (AgGrid)")
+        st.subheader("Manual Data Input")
 
         # Initialize a DataFrame in session_state if not present
         if "manual_df" not in st.session_state:
