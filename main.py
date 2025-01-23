@@ -606,12 +606,14 @@ def main():
             # Use st.button and set session state immediately
             if st.button("Switch to Manual Data Input"):
                 st.session_state["manual_mode"] = True
-                st.experimental_rerun()  # Force a page rerun to update the UI immediately
+                st.experimental_rerun()  # This should be removed and handled more gracefully
         else:
             # Use st.button and set session state immediately
             if st.button("Switch to File Upload Mode"):
                 st.session_state["manual_mode"] = False
-                st.experimental_rerun()  # Force a page rerun to update the UI immediately
+                # Instead of rerunning the page, use st.empty() or st.write()
+                st.empty()  # Clear the element to reflect the change immediately.
+
 
 
     # -------------------- MANUAL MODE --------------------
