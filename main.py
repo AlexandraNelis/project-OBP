@@ -579,9 +579,9 @@ def main():
         """
     )
 
-    # -- Add a toggle for manual data input --
-    if "manual_mode" not in st.session_state:
-        st.session_state["manual_mode"] = False
+    # # -- Add a toggle for manual data input --
+    # if "manual_mode" not in st.session_state:
+    #     st.session_state["manual_mode"] = False
 
     col1, col2 = st.columns([2, 2])
     
