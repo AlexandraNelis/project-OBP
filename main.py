@@ -574,7 +574,7 @@ def main():
     st.title("Multi-Machine Scheduling Optimizer")
     st.markdown(
         """
-        test Optimize your multi-machine scheduling tasks to minimize total **weighted tardiness**.  
+        Optimize your multi-machine scheduling tasks to minimize total **weighted tardiness**.  
         Use the **sidebar** to upload data or click below to **manually input data**.
         """
     )
