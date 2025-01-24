@@ -313,7 +313,7 @@ def evaluate_solver(max_jobs,max_machines,time_limit,batch):
             df = generate_test_case(num_jobs, num_machines)
             solving_set=[]
             Time_capped = False
-
+            outtime = 0
             for i in range(batch):#uneven number so the ratio will always tip to one side
                 st.write(f"trial {i+1}")
                 machine_columns = [f"Machine {i}" for i in range(1, num_machines + 1)]
@@ -324,13 +324,14 @@ def evaluate_solver(max_jobs,max_machines,time_limit,batch):
                 if solving_time >= time_limit:
                     solving_set.append((result,False,solving_time))
                     st.write(f"Not in time")
+                    outtime+=1
                 else:
                     solving_set.append((result,True,solving_time))
                     st.write(f"Within time")
-
-            false_count = sum(1 for _, is_false, _ in solving_set if not is_false)
+                if outtime>=batch/2:
+                    break
             solving_set.sort(key=lambda x: not x[1])
-            if false_count > batch/2:#more than half of the tries failed at the instance
+            if outtime >=batch/2:#more than half of the tries failed at the instance
                 Time_capped = True
                 solving_set.sort(key=lambda x: x[1])
             # Record performance
