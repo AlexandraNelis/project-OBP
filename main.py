@@ -567,6 +567,9 @@ def handle_solution_download(results_df, input_df):
         file_name="schedule_solution.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
+
+
+
 def main():
     setup_streamlit_ui()
     uploaded_file, solver_choice = setup_sidebar()
@@ -581,18 +584,23 @@ def main():
 
     # -- Add a toggle for manual data input --
     if "manual_mode" not in st.session_state:
-        st.session_state["manual_mode"] = False
+        st.session_state["manual_mode"] = False  # Default to File Upload Mode
 
+    # Create two buttons, one for each mode
     col1, col2 = st.columns([2, 2])
+
+    switch1 = st.button("Manual Data Input")
+    switch2 = st.button("Upload Data Input")
     
     with col1:
         # Switch between manual input and file upload
-        if not st.session_state["manual_mode"]:
-            if st.button("Switch to Manual Data Input"):
+        if not st.session_state["manual_mode"] and switch1:
                 st.session_state["manual_mode"] = True
-        else:
-            if st.button("Switch to File Upload Mode"):
+
+        elif st.session_state["manual_mode"] and switch2:
                 st.session_state["manual_mode"] = False
+
+
 
     # -------------------- MANUAL MODE --------------------
     if st.session_state["manual_mode"]:
