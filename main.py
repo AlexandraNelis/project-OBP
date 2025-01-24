@@ -449,10 +449,10 @@ def create_download_link(val, filename,type):
 
 option = st.selectbox(
     "Choose an option:",  # Label for the dropdown
-    ["Option 1", "Option 2"]  # List of options
+    ["Extended solver OR Tools", "Compare Gurobi and OR tools"]  # List of options
 )
-if option == "Option 1":
-    st.write("You chose Option 1! 🎉")
+if option == "Extended solver OR Tools":
+    st.write("You chose Extended solver OR Tools! 🎉")
      # User input fields (before button)
     num_jobs = st.number_input("Maximum number of jobs", min_value=1, step=1)
     num_machines = st.number_input("Maximum number of machines", min_value=1, step=1)
@@ -494,8 +494,8 @@ if option == "Option 1":
             st.markdown(largest_set_url, unsafe_allow_html=True)
             st.markdown(graph_url, unsafe_allow_html=True)
 
-elif option == "Option 2":
-    st.write("You chose Option 2! 🚀")
+elif option == "Compare Gurobi and OR tools":
+    st.write("You chose Compare Gurobi and OR tools! 🚀")
     if st.button("Run Comparison solver Tests"):
         with st.spinner("Running tests..."):
             test_jobs = [2,3]
