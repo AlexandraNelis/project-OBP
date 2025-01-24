@@ -277,13 +277,19 @@ def generate_test_case(num_jobs, num_machines):
     """
     Generate a synthetic test case with the specified number of jobs and machines.
     """
+    ratio = 1
     min_time_service = 1
     max_time_service = 10
     average_service =(min_time_service+max_time_service)/2
+
+    end_release =num_machines*ratio*average_service
+    begin_due = end_release + max_time_service*ratio*num_machines
+    end_due = begin_due + max_time_service*ratio*num_machines
+    average_service =(min_time_service+max_time_service)/2
     data = {
         "TaskID": list(range(1, num_jobs + 1)),
-        "ReleaseDate": np.random.randint(0,min_time_service*(num_machines+1), size=num_jobs),  # 0,11
-        "DueDate": np.random.randint(average_service*(num_machines + 1 ), max_time_service*(num_machines+1), size=num_jobs), #55,110
+        "ReleaseDate": np.random.randint(0,end_release, size=num_jobs),  # 0,11
+        "DueDate": np.random.randint(begin_due,end_due, size=num_jobs), #55,110
         "Weight": np.random.randint(1, 3, size=num_jobs),       # Random weights
     }
     for i in range(1, num_machines + 1):
