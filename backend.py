@@ -2,8 +2,9 @@ import time
 import pandas as pd
 from itertools import combinations
 import gurobipy as gp
-from gurobipy import GRB, quicksum
+from gurobipy import GRB, quicksum, GurobiError
 from ortools.sat.python import cp_model
+
 
 def validate_input_data(df):
     """
@@ -275,11 +276,10 @@ def solve_scheduling_problem(df, machine_columns):
     tasks = df.to_dict('records')
     machines = list(range(len(machine_columns)))
     
-    # Calculate horizon
-    horizon = max(
-        max(t['DueDate'] for t in tasks),
-        sum(max(t[col] for col in machine_columns) for t in tasks)
-    )
+    # Calculate horizon: no task can start or end later than this value
+    horizon = sum(
+    t['DueDate'] - t['ReleaseDate'] + sum(t[col] for col in machine_columns)
+    for t in tasks)
     
     # Initialize model
     model = cp_model.CpModel()
@@ -299,7 +299,7 @@ def solve_scheduling_problem(df, machine_columns):
     solver = cp_model.CpSolver()
     
     # Add time limit and other parameters to improve performance
-    solver.parameters.max_time_in_seconds = 300.0  # 5 minute timeout
+    #solver.parameters.max_time_in_seconds = 300.0  # 5 minute timeout
     solver.parameters.num_search_workers = 8  # Use multiple cores
     solver.parameters.log_search_progress = True  # Enable logging for debugging
     
@@ -348,44 +348,71 @@ def add_gurobi_disjunctive_constraints(model, jobs, machines, x, z, z1, times, h
             model.addConstr(x[k, i] + times[k][i] <= x[k, j] + horizon * (1 - z1[i, j, k]))
             model.addConstr(x[k, j] + times[k][j] <= x[k, i] + horizon * z1[i, j, k])
 
-def solve_scheduling_problem_gurobi(df, machine_columns):
-    """Main Gurobi solver function."""
-    tasks = df.to_dict('records')
-    model = gp.Model("WeightedTardinessScheduling")
-    model.setParam("OutputFlag", 1) # Enable Gurobi output logging for debugging
+def solve_scheduling_problem_gurobi(
+    df, machine_columns, initial_model=None,
+    tasks=None, machines=None, x=None, T=None, times=None
+):
+    try:
+        # If an initial model is provided, use it instead of creating a new one
+        if initial_model is not None:
+            model = initial_model
+            model.setParam("TimeLimit", 300)  # Reset time limit
+            model.optimize()
+            # Re-use the tasks, machines, x, T, times passed in
+            results = extract_gurobi_solution(model, tasks, machines, x, T, times)
 
-    # Set Gurobi parameters for tighter control
-    model.Params.MIPGap = 0        # Ensure no relative gap
-    model.Params.MIPGapAbs = 0     # Ensure no absolute gap
+            return results, model, tasks, machines, x, T, times
+        else:
+            tasks = df.to_dict('records')
+            model = gp.Model("WeightedTardinessScheduling")
+            model.setParam("OutputFlag", 1)  # Enable Gurobi output logging for debugging
 
-    num_tasks = len(tasks)
-    jobs = list(range(num_tasks))
-    machines = list(range(len(machine_columns)))
-    times = [[t[col] for col in machine_columns] for t in tasks]
-    horizon = sum(sum(t_row) for t_row in times)
+            # Set Gurobi parameters for tighter control
+            model.Params.MIPGap = 0        # Ensure no relative gap
+            model.Params.MIPGapAbs = 0     # Ensure no absolute gap
+            model.Params.TimeLimit = 300   # 5 minute timeout
 
-    # Create variables
-    x, z, z1, T = create_gurobi_variables(model, jobs, machines, horizon)
-    
-    # Set objective
-    model.setObjective(quicksum(tasks[j]['Weight'] * T[j] for j in jobs), GRB.MINIMIZE)
-    
-    # Add constraints
-    add_gurobi_basic_constraints(model, jobs, machines, x, T, tasks, times, horizon)
-    add_gurobi_disjunctive_constraints(model, jobs, machines, x, z, z1, times, horizon)
+            num_tasks = len(tasks)
+            jobs = list(range(num_tasks))
+            machines = list(range(len(machine_columns)))
+            times = [[t[col] for col in machine_columns] for t in tasks]
+            horizon = sum(sum(t_row) for t_row in times)
 
-    # Solve and extract results
-    model.optimize()
-    return extract_gurobi_solution(model, tasks, machines, x, T, times)
+            # Create variables
+            x, z, z1, T = create_gurobi_variables(model, jobs, machines, horizon)
+            
+            # Set objective
+            model.setObjective(quicksum(tasks[j]['Weight'] * T[j] for j in jobs), GRB.MINIMIZE)
+            
+            # Add constraints
+            add_gurobi_basic_constraints(model, jobs, machines, x, T, tasks, times, horizon)
+            add_gurobi_disjunctive_constraints(model, jobs, machines, x, z, z1, times, horizon)
+
+            # Solve and extract results
+            model.optimize()
+            results = extract_gurobi_solution(model, tasks, machines, x, T, times)
+
+            return results, model, tasks, machines, x, T, times
+
+    except GurobiError as e:
+        if "size-limited license" in str(e):
+            print("Error: Model too large for the current Gurobi license.")
+            return (
+                {'status': None, 'objective': None, 'schedule': [], 'error': 'Model too large for size-limited license.'},
+                None, None, None, None, None, None
+            )
+        else:
+            raise  # Re-raise other Gurobi errors
 
 def extract_gurobi_solution(model, tasks, machines, x, T, times):
     """Extract solution from Gurobi model."""
     status = model.status
     results = {'status': status, 'objective': None, 'schedule': []}
 
-    if status in [GRB.OPTIMAL, GRB.SUBOPTIMAL]:
-        results['objective'] = model.ObjVal
-        results['schedule'] = build_gurobi_schedule(tasks, machines, x, T, times)
+    if status in [GRB.OPTIMAL, GRB.SUBOPTIMAL, GRB.TIME_LIMIT]:
+        if model.SolCount > 0:
+            results['objective'] = model.ObjVal
+            results['schedule'] = build_gurobi_schedule(tasks, machines, x, T, times)
     
     return results
 
