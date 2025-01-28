@@ -258,7 +258,6 @@ def solve_scheduling_problem(df, machine_columns):
     # Add time limit and other parameters to improve performance
     solver.parameters.max_time_in_seconds = 60.0  # 5 minute timeout
     solver.parameters.num_search_workers = 8  # Use multiple cores
-    solver.parameters.log_search_progress = True  # Enable logging for debugging
     
     start_time = time.time()
     status = solver.Solve(model)
