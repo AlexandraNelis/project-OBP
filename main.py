@@ -315,7 +315,7 @@ def evaluate_solver(min_jobs,max_jobs,min_machines,max_machines,time_limit,batch
             Time_capped = False
             outtime = 0
             for i in range(batch):#uneven number so the ratio will always tip to one side
-                st.write(f"trial {i+1}")
+                #st.write(f"trial {i+1}")
                 machine_columns = [f"Machine {i}" for i in range(1, num_machines + 1)]
                 start_time = time.time()
                 if Solver:
@@ -326,19 +326,17 @@ def evaluate_solver(min_jobs,max_jobs,min_machines,max_machines,time_limit,batch
                 solving_time =  end_time - start_time
                 if solving_time >= time_limit:
                     solving_set.append((result,False,solving_time))
-                    st.write(f"Not in time")
+                    #st.write(f"Not in time")
                     outtime+=1
                 else:
                     solving_set.append((result,True,solving_time))
-                    st.write(f"Within time")
+                    #st.write(f"Within time")
                 if outtime>=batch/2:
                     break
             solving_set.sort(key=lambda x: not x[1])
             if outtime >=batch/2:#more than half of the tries failed at the instance
                 Time_capped = True
                 solving_set.sort(key=lambda x: x[1])
-            # Record performance
-            print(Time_capped)
             results.append({
                 "NumJobs": num_jobs,
                 "NumMachines": num_machines,
@@ -353,8 +351,7 @@ def evaluate_solver(min_jobs,max_jobs,min_machines,max_machines,time_limit,batch
             largest_set_of_jobs[num_machines] = best_job
             if len(results)>1:
                 if results[-2]['TimeCapped'] and  results[-1]['TimeCapped']:
-                    print("no improvement")
-                    st.write(f"No improvement")
+                    #st.write(f"No improvement")
                     break          
     return pd.DataFrame(results),pd.DataFrame(list(largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"])
 
