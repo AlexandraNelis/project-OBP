@@ -303,14 +303,12 @@ def evaluate_solver(min_jobs,max_jobs,min_machines,max_machines,time_limit,batch
     """
     results = []
     largest_set_of_jobs = {}
-      
+    best_job = 0
+
     for num_machines in range(min_machines, max_machines + 1): # Increment machines by 1
-        best_job = 0
         largest_set_of_jobs[num_machines]=(best_job,None)  
-        if Solver:
-            starting_job =  num_machines*3  if num_machines*3 > min_jobs else min_jobs
-        else:
-            starting_job=min_jobs   
+        starting_job= min_jobs if max(best_job - 10,0) < min_jobs else max(best_job - 10,0)
+        
         for num_jobs in range(starting_job, max_jobs + 1, 2):# Increment jobs by 10 
             st.write(f"Testing with {num_jobs} jobs and {num_machines} machines...")
             df = generate_test_case(num_jobs, num_machines,ratio)
