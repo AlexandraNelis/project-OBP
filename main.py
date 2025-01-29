@@ -557,12 +557,12 @@ elif option =="Ratio comparison":
     if st.button("Run Ratio Tests"):
         with st.spinner("Running tests..."):
             ratio_results=[]
-            for ratio in range(0,1,0.1):
+            for ratio in range(1,11):
                 or_performance_results, or_largest_set = evaluate_solver(
-                    int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),True,ratio
+                    int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),True,ratio/100
                 )
                 gur_performance_results, gur_largest_set = evaluate_solver(
-                    int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),False,ratio
+                    int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),False,ratio/100
                 )
                 ratio_results.append({"OR status":or_performance_results["SolverStatus"],
                                      "Gurobi status":gur_performance_results["SolverStatus"],
