@@ -453,7 +453,7 @@ def create_download_link(val, filename,type):
 
 option = st.selectbox(
     "Choose an option:",  # Label for the dropdown
-    ["Extended solver OR Tools", "Extended solver Gurobi"]  # List of options
+    ["Extended solver OR Tools", "Extended solver Gurobi","Ratio comparison"]  # List of options
 )
 if option == "Extended solver OR Tools":
     st.write("You chose Extended solver OR Tools! 🎉")
@@ -546,3 +546,25 @@ elif option == "Extended solver Gurobi":
             st.markdown(performance_url, unsafe_allow_html=True)
             st.markdown(largest_set_url, unsafe_allow_html=True)
             st.markdown(graph_url, unsafe_allow_html=True)
+elif option =="Ratio comparison":
+    st.write(f"You choose Ratio comparison!")
+    min_num_jobs = st.number_input("Minimum number of jobs", min_value=1, step=1)
+    max_num_jobs = st.number_input("Maximum number of jobs", min_value=1, step=1)
+    min_machines = st.number_input("Minimum number of machines", min_value=1, step=1)
+    max_machines = st.number_input("Maximum number of machines", min_value=1, step=1)
+    time_limit = st.number_input("Search time limit (seconds)", min_value=1, step=1)
+    batch = st.number_input("Batch size of trial runs per instance", min_value=1, step=1)
+     # Run solver only when button is clicked
+    if st.button("Run Ratio Tests"):
+        with st.spinner("Running tests..."):
+            for ratio in range(0,1,0.1):
+                or_performance_results, or_largest_set = evaluate_solver(
+                    int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),True,ratio
+                )
+                gur_performance_results, gur_largest_set = evaluate_solver(
+                    int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),False,ratio
+                )
+                or_status = or_performance_results["SolverStatus"]
+                gur_status = gur_performance_results["SolverStatus"]
+                or_objective = or_largest_set["Objective value"]
+                gur_objective = gur_largest_set["Objective value"]
