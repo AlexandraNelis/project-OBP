@@ -266,6 +266,7 @@ def solve_scheduling_problem(df, machine_columns):
     results = {'status': status, 'objective': None, 'schedule': [], 'solve_time': solve_time}
     
     if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+        print(solver.ObjectiveValue())
         results['objective'] = solver.ObjectiveValue()
         results['schedule'] = extract_solution(solver, tasks, machines, variables, times)
     
@@ -273,11 +274,10 @@ def solve_scheduling_problem(df, machine_columns):
 
 
 
-def generate_test_case(num_jobs, num_machines):
+def generate_test_case(num_jobs, num_machines.ratio):
     """
     Generate a synthetic test case with the specified number of jobs and machines.
     """
-    ratio = 1
     min_time_service = 1
     max_time_service = 10
     average_service =(min_time_service+max_time_service)/2
@@ -297,7 +297,7 @@ def generate_test_case(num_jobs, num_machines):
 
     return pd.DataFrame(data)
 
-def evaluate_solver(min_jobs,max_jobs,min_machines,max_machines,time_limit,batch,Solver):
+def evaluate_solver(min_jobs,max_jobs,min_machines,max_machines,time_limit,batch,Solver,ratio):
     """
     Run the solver with increasing job and machine sizes, and record results.
     """
@@ -306,14 +306,14 @@ def evaluate_solver(min_jobs,max_jobs,min_machines,max_machines,time_limit,batch
       
     for num_machines in range(min_machines, max_machines + 1): # Increment machines by 1
         best_job = 0
-        largest_set_of_jobs[num_machines]=best_job  
+        largest_set_of_jobs[num_machines]=(best_job,None)  
         if Solver:
-            starting_job =  num_machines*4  if num_machines*4 > min_jobs else min_jobs
+            starting_job =  num_machines*3  if num_machines*3 > min_jobs else min_jobs
         else:
             starting_job=min_jobs   
         for num_jobs in range(starting_job, max_jobs + 1, 2):# Increment jobs by 10 
             st.write(f"Testing with {num_jobs} jobs and {num_machines} machines...")
-            df = generate_test_case(num_jobs, num_machines)
+            df = generate_test_case(num_jobs, num_machines,ratio)
             solving_set=[]
             Time_capped = False
             outtime = 0
@@ -351,12 +351,12 @@ def evaluate_solver(min_jobs,max_jobs,min_machines,max_machines,time_limit,batch
             })
             if  results[-1]['SolveTime']<=60:
                 best_job = num_jobs
-            largest_set_of_jobs[num_machines] = best_job
+            largest_set_of_jobs[num_machines] = (best_job,solving_set[0][0]["objective"])
             if len(results)>1:
                 if results[-2]['TimeCapped'] and  results[-1]['TimeCapped']:
                     #st.write(f"No improvement")
                     break          
-    return pd.DataFrame(results),pd.DataFrame(list(largest_set_of_jobs.items()), columns=["Number of machines", "Number of jobs"])
+    return pd.DataFrame(results),pd.DataFrame([(M, job, value) for M, (job, value) in largest_set_of_jobs.items()], columns=["Number of machines", "Number of jobs", "Objective value"])
 
 def run_batch(df, machine_columns,solver,solving_set,time_limit):
     start_time = time.time()
@@ -377,7 +377,7 @@ def run_batch(df, machine_columns,solver,solving_set,time_limit):
 
 def compare_solvers(test_jobs,test_machines):
     or_results = []
-    gur_results=[]
+    gur_results=[] 
     time_limit = 60 
     or_largest_set_of_jobs = {}
     gur_largest_set_of_jobs = {}
@@ -464,12 +464,13 @@ if option == "Extended solver OR Tools":
     max_machines = st.number_input("Maximum number of machines", min_value=1, step=1)
     time_limit = st.number_input("Search time limit (seconds)", min_value=1, step=1)
     batch = st.number_input("Batch size of trial runs per instance", min_value=1, step=1)
+    ratio = st.number_input("Ratio of difficulty per instance", min_value=0, step=0.1)
 
     # Run solver only when button is clicked
     if st.button("Run Solver Performance Tests"):
         with st.spinner("Running tests..."):
             performance_results, largest_set = evaluate_solver(
-                int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),True
+                int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),True,ratio
             )
             st.markdown("### Performance Results")
             st.dataframe(performance_results)
@@ -509,12 +510,13 @@ elif option == "Extended solver Gurobi":
     max_machines = st.number_input("Maximum number of machines", min_value=1, step=1)
     time_limit = st.number_input("Search time limit (seconds)", min_value=1, step=1)
     batch = st.number_input("Batch size of trial runs per instance", min_value=1, step=1)
+    ratio = st.number_input("Ratio of difficulty per instance", min_value=0, step=0.1)
 
     # Run solver only when button is clicked
     if st.button("Run Solver Performance Tests"):
         with st.spinner("Running tests..."):
             performance_results, largest_set = evaluate_solver(
-                int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),False
+                int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),False,ratio
             )
             st.markdown("### Performance Results")
             st.dataframe(performance_results)
