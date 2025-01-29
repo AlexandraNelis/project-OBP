@@ -275,7 +275,7 @@ def solve_scheduling_problem(df, machine_columns,time_limit):
 
 
 
-def generate_test_case(num_jobs, num_machines.ratio):
+def generate_test_case(num_jobs, num_machines,ratio):
     """
     Generate a synthetic test case with the specified number of jobs and machines.
     """
