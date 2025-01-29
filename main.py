@@ -14,7 +14,7 @@ from itertools import combinations
 import seaborn as sns
 
 
-def solve_gurobi_scheduling_problem(df, machine_columns):
+def solve_gurobi_scheduling_problem(df, machine_columns,time_limit):
     """
     Given a DataFrame `df` with columns:
       - 'TaskID' (unique identifier)
@@ -96,6 +96,7 @@ def solve_gurobi_scheduling_problem(df, machine_columns):
     model.optimize()
     end_time = time.time()
     print(end_time - start_time)
+    model.setParam(GRB.Param.TimeLimit, time_limit)  # Stop after 60 seconds
 
     status = model.status
     results = {
@@ -226,7 +227,7 @@ def extract_solution(solver, tasks, machines, variables, times):
     return schedule
 
 
-def solve_scheduling_problem(df, machine_columns):
+def solve_scheduling_problem(df, machine_columns,time_limit):
     """
     Optimized version of the scheduling problem Google CP-SAT solver.
     """
@@ -256,7 +257,7 @@ def solve_scheduling_problem(df, machine_columns):
     solver = cp_model.CpSolver()
     
     # Add time limit and other parameters to improve performance
-    solver.parameters.max_time_in_seconds = 60.0  # 5 minute timeout
+    solver.parameters.max_time_in_seconds = time_limit # 5 minute timeout
     solver.parameters.num_search_workers = 8  # Use multiple cores
     
     start_time = time.time()
@@ -320,9 +321,9 @@ def evaluate_solver(min_jobs,max_jobs,min_machines,max_machines,time_limit,batch
                 machine_columns = [f"Machine {i}" for i in range(1, num_machines + 1)]
                 start_time = time.time()
                 if Solver:
-                    result = solve_scheduling_problem(df, machine_columns)
+                    result = solve_scheduling_problem(df, machine_columns,time_limit)
                 else:
-                    result = solve_gurobi_scheduling_problem(df, machine_columns)
+                    result = solve_gurobi_scheduling_problem(df, machine_columns,time_limit)
                 end_time = time.time()
                 solving_time =  end_time - start_time
                 if solving_time >= time_limit:
