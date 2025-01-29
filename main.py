@@ -557,6 +557,7 @@ elif option =="Ratio comparison":
      # Run solver only when button is clicked
     if st.button("Run Ratio Tests"):
         with st.spinner("Running tests..."):
+            ratio_results=[]
             for ratio in range(0,1,0.1):
                 or_performance_results, or_largest_set = evaluate_solver(
                     int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),True,ratio
@@ -564,7 +565,12 @@ elif option =="Ratio comparison":
                 gur_performance_results, gur_largest_set = evaluate_solver(
                     int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),False,ratio
                 )
-                or_status = or_performance_results["SolverStatus"]
-                gur_status = gur_performance_results["SolverStatus"]
-                or_objective = or_largest_set["Objective value"]
-                gur_objective = gur_largest_set["Objective value"]
+                ratio_results.append({"OR status":or_performance_results["SolverStatus"],
+                                     "Gurobi status":gur_performance_results["SolverStatus"],
+                                    "OR objective":or_largest_set["Objective value"],
+                                    "Gurobi Objective":gur_largest_set["Objective value"]})
+                
+                ratio_table = pd.DataFrame(ratio_results)
+                ratio_data = ratio_table.to_csv(index=False).encode("utf-8")
+                ratio_url = create_download_link(ratio_data, 'Ratio results',"csv")
+                st.markdown(ratio_url, unsafe_allow_html=True)
