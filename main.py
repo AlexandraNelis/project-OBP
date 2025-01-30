@@ -131,8 +131,14 @@ def main():
             })
             st.session_state["manual_df"] = df_init
 
-        # Buttons to add more rows or machine columns
+        # Buttons to add/delete rows or machine columns
+        #Don’t allow deleting if there is only 1 row or only 1 machine column remaining.
+		#Use your existing identify_machine_columns function to find the last machine column name.
+		#Drop that column from st.session_state["manual_df"] only if at least 2 machine columns remain.
+		#Similarly, only drop the last row if there are at least 2 rows.
+
         row_col1, row_col2 = st.columns(2)
+
         with row_col1:
             if st.button("Add 1 More Row"):
                 current_df = st.session_state["manual_df"]
@@ -143,7 +149,7 @@ def main():
                     new_id = max_id + 1
                 else:
                     new_id = 1  # fallback
-                
+
                 new_row = {
                     "TaskID": new_id,
                     "ReleaseDate": 0,
@@ -154,9 +160,19 @@ def main():
                     "M3Time": 4
                 }
                 st.session_state["manual_df"] = pd.concat(
-                    [current_df, pd.DataFrame([new_row])], 
+                    [current_df, pd.DataFrame([new_row])],
                     ignore_index=True
                 )
+
+            # Delete last row only if there's more than 1 row
+            if st.button("Delete Last Row"):
+                if len(st.session_state["manual_df"]) > 1:
+                    st.session_state["manual_df"].drop(
+                        st.session_state["manual_df"].index[-1],
+                        inplace=True
+                    )
+                else:
+                    st.warning("Cannot delete the last row (at least 1 row is required).")
 
         with row_col2:
             if st.button("Add Another Machine Column"):
@@ -166,11 +182,18 @@ def main():
                 new_col = f"M{next_machine_index}Time"
                 st.session_state["manual_df"][new_col] = 0  # Initialize with default value
 
+            # Delete last machine column only if there's more than 1 machine column
+            if st.button("Delete Last Machine Column"):
+                machine_cols = identify_machine_columns(st.session_state["manual_df"])
+                if len(machine_cols) > 1:
+                    last_machine_col = machine_cols[-1]  # e.g. 'M3Time'
+                    st.session_state["manual_df"].drop(columns=[last_machine_col], inplace=True)
+                else:
+                    st.warning("Cannot delete the last machine (at least 1 machine column is required).")
+
         # Build AgGrid options
         gb = GridOptionsBuilder.from_dataframe(st.session_state["manual_df"])
         gb.configure_default_column(editable=True, groupable=True)
-        # Attempt to reduce "double-typing" by forcing cell editing to end on blur
-        gb.configure_grid_options(stopEditingWhenCellsLoseFocus=True)
         gb_options = gb.build()
 
         st.info("Edit your data below. Scroll horizontally for more columns if needed.")
@@ -178,9 +201,10 @@ def main():
         # Display data in AgGrid
         aggrid_return = AgGrid(
             st.session_state["manual_df"],
+            key="manual_aggrid",
             gridOptions=gb_options,
             data_return_mode=DataReturnMode.AS_INPUT,
-            update_mode=GridUpdateMode.VALUE_CHANGED,
+            update_mode=GridUpdateMode.MODEL_CHANGED,
             fit_columns_on_grid_load=True,
             theme="balham",
             enable_enterprise_modules=False
@@ -309,7 +333,7 @@ def main():
                             T=T,
                             times=times
                         )
-                        
+
                     st.session_state["is_optimizing"] = False
                     st.session_state["results"] = results
                     st.session_state["gurobi_model"] = model
