@@ -51,12 +51,16 @@ def setup_sidebar():
             ["OR-Tools", "Gurobi"],
             help="Choose the solver to optimize the schedule."
         )
-        st.markdown("""
-            Note that **Google OR-Tools** has a fixed maximum computation time limit of 15 minutes, 
-            while **Gurobi** can display a feasible solution every 5 minutes, until the optimal solution is found.
+
+        # Add explanation inside an expander
+        with st.expander("ℹ️ Solver Selection Help"):
+            st.info("""
+            - **Google OR-Tools** has a **fixed 15-minute** maximum time limit for the computation and provides the best solution found within that time.
+            - **Gurobi** can **continuously refine** its solution every **5 minutes**, getting progressively **closer to the optimal result**. To continue refining a Gurobi solution, click **"Continue Solving for 5 More Minutes"** when prompted.
             """)
+
         st.markdown("---")
-        
+
     return uploaded_file, solver_choice
 
 
