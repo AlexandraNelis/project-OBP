@@ -121,7 +121,7 @@ def main():
         if "manual_df" not in st.session_state:
             # Start with default columns and one row
             df_init = pd.DataFrame({
-                "TaskID": [0],
+                "TaskID": [1],
                 "ReleaseDate": [0],
                 "DueDate": [0],
                 "Weight": [0],
@@ -196,7 +196,7 @@ def main():
         gb.configure_default_column(editable=True, groupable=True)
         gb_options = gb.build()
 
-        st.info("Edit your data below. Scroll horizontally for more columns if needed.")
+        st.info("Edit your data below.")
 
         # Display data in AgGrid
         aggrid_return = AgGrid(
