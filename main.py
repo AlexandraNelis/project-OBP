@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from ortools.sat.python.cp_model import OPTIMAL, FEASIBLE
+from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode
 from gurobipy import GRB
 
 # Import from backend
@@ -22,6 +23,7 @@ from frontend import (
     schedule_to_dataframe
 )
 
+
 def show_current_results(df, solver_choice, machine_columns):
     """
     Display the stored results (if any) from st.session_state.
@@ -33,7 +35,15 @@ def show_current_results(df, solver_choice, machine_columns):
         return  # Nothing to show
 
     status = results["status"]
-    if status in [OPTIMAL, FEASIBLE, GRB.OPTIMAL, GRB.SUBOPTIMAL, GRB.TIME_LIMIT]:
+    # Define feasible statuses based on solver
+    feasible_statuses = []
+    if solver_choice == "OR-Tools":
+        feasible_statuses = [FEASIBLE, OPTIMAL]
+    elif solver_choice == "Gurobi":
+        feasible_statuses = [GRB.OPTIMAL, GRB.SUBOPTIMAL, GRB.TIME_LIMIT]
+
+    # If a solution is feasible/optimal/suboptimal/time-limit, display
+    if status in feasible_statuses:
         if results["objective"] is not None:
             st.success(f"Solution found! Total Weighted Tardiness = {results['objective']:.1f}")
         else:
@@ -49,14 +59,14 @@ def show_current_results(df, solver_choice, machine_columns):
             results_df = schedule_to_dataframe(results["schedule"])
             st.dataframe(results_df, use_container_width=True, hide_index=True)
 
-        # Validation
+        # Validation Results
         with st.expander("Validation Results"):
             validation_results = validate_schedule(
                 results["schedule"], df, machine_columns, solver_choice, status
             )
             display_validation_results(validation_results)
 
-        # Download
+        # Download Button
         st.markdown("### Download Solution")
         handle_solution_download(results_df, df)
     else:
@@ -67,146 +77,261 @@ def main():
     setup_streamlit_ui()
     uploaded_file, solver_choice = setup_sidebar()
 
-    # Initialize the 'is_optimizing' flag if not present
+    # Initialize 'is_optimizing' to avoid multiple solves at once
     if "is_optimizing" not in st.session_state:
         st.session_state["is_optimizing"] = False
 
     st.title("Multi-Machine Scheduling Optimizer")
-    st.markdown(
-        """
-        Optimize your multi-machine scheduling tasks to minimize total **weighted tardiness**.
-        Use the **sidebar** to upload data and configure settings.
-        """
-    )
+    st.markdown("""
+        Optimize your multi-machine scheduling tasks to minimize total **weighted tardiness**.  
+        Use the **sidebar** to upload data **or** click below to **manually input data**.
+    """)
 
-    # 1) Load or restore DataFrame
-    if uploaded_file is not None:
-        try:
-            df = pd.read_excel(uploaded_file)
-            df.columns = df.columns.map(str)
-            # If the user uploads a new dataset, invalidate old Gurobi model or results
-            if "df" in st.session_state and not df.equals(st.session_state["df"]):
-                st.session_state["gurobi_model"] = None
-                st.session_state["results"] = None
+    # Toggle between Manual Input vs. File Upload
+    if "manual_mode" not in st.session_state:
+        st.session_state["manual_mode"] = False  # default to file upload
 
-            st.session_state["df"] = df
-        except Exception as e:
-            st.error(f"Error reading the file: {e}")
-            return
-    else:
-        df = st.session_state.get("df", None)
+    # Create two buttons, one for each mode
+    col1, col2 = st.columns([2, 2])
 
-    if df is None:
-        st.info("Upload an Excel file to start.")
-        return
+    switch1 = col1.button("Manual Data Input")
+    switch2 = col2.button("Upload Data Input")
+    
+    with col1:
+        # Switch to manual mode
+        if switch1:
+            st.session_state["manual_mode"] = True
 
-    # 2) If solver changed from a previous run, also reset the old model
+    with col2:
+        # Switch to upload mode
+        if switch2:
+            st.session_state["manual_mode"] = False
+
+    # If user changes solver from a previous run, reset model and results
     if "last_solver" in st.session_state and st.session_state["last_solver"] != solver_choice:
         st.session_state["gurobi_model"] = None
         st.session_state["results"] = None
     st.session_state["last_solver"] = solver_choice
 
-    # 3) Validate input data
-    is_valid, error_message = validate_input_data(df)
-    if not is_valid:
-        st.error(error_message)
-        return
+    # -------------------- MANUAL MODE --------------------
+    if st.session_state["manual_mode"]:
+        st.subheader("Manual Data Input")
 
-    st.markdown("### Input Data Preview")
-    st.dataframe(df, use_container_width=True, hide_index=True)
+        # Initialize a DataFrame in session_state if not present
+        if "manual_df" not in st.session_state:
+            # Start with default columns and one row
+            df_init = pd.DataFrame({
+                "TaskID": [1],
+                "ReleaseDate": [0],
+                "DueDate": [10],
+                "Weight": [1],
+                "M1Time": [2],
+                "M2Time": [3],
+                "M3Time": [4]
+            })
+            st.session_state["manual_df"] = df_init
 
-    # 4) Identify machine columns
-    with st.sidebar:
-        st.title("Configure Machine Columns")
-        machine_columns = st.multiselect(
-            "Select Machine Columns (in order):",
-            identify_machine_columns(df),
-            default=identify_machine_columns(df)
-        )
-        st.markdown("---")
-
-    # 5) Solve button (only enabled if not currently optimizing)
-    if not st.session_state["is_optimizing"]:
-        if st.button("Solve Scheduling Problem"):
-            # Start optimizing
-            st.session_state["is_optimizing"] = True
-            with st.spinner(f"Solving the scheduling problem with {solver_choice}..."):
-                if solver_choice == "Gurobi":
-                    (
-                        results,
-                        gurobi_model,
-                        tasks,
-                        machines,
-                        x,
-                        T,
-                        times
-                    ) = solve_scheduling_problem_gurobi(df, machine_columns)
-
-                    st.session_state["results"] = results
-                    st.session_state["gurobi_model"] = gurobi_model
-                    st.session_state["gurobi_data"] = (tasks, machines, x, T, times)
-
+        # Buttons to add more rows or machine columns
+        row_col1, row_col2 = st.columns(2)
+        with row_col1:
+            if st.button("Add 1 More Row"):
+                current_df = st.session_state["manual_df"]
+                if "TaskID" in current_df.columns:
+                    max_id = current_df["TaskID"].max()
+                    if pd.isna(max_id):
+                        max_id = 0
+                    new_id = max_id + 1
                 else:
-                    results = solve_scheduling_problem(df, machine_columns)
-                    st.session_state["results"] = results
-                    st.session_state["gurobi_model"] = None
+                    new_id = 1  # fallback
+                
+                new_row = {
+                    "TaskID": new_id,
+                    "ReleaseDate": 0,
+                    "DueDate": 10,
+                    "Weight": 1,
+                    "M1Time": 2,
+                    "M2Time": 3,
+                    "M3Time": 4
+                }
+                st.session_state["manual_df"] = pd.concat(
+                    [current_df, pd.DataFrame([new_row])], 
+                    ignore_index=True
+                )
 
-            # Finished optimizing
-            st.session_state["is_optimizing"] = False
+        with row_col2:
+            if st.button("Add Another Machine Column"):
+                # Count how many columns already start with 'M' and end with 'Time'
+                machine_cols = identify_machine_columns(st.session_state["manual_df"])
+                next_machine_index = len(machine_cols) + 1
+                new_col = f"M{next_machine_index}Time"
+                st.session_state["manual_df"][new_col] = 0  # Initialize with default value
+
+        # Build AgGrid options
+        gb = GridOptionsBuilder.from_dataframe(st.session_state["manual_df"])
+        gb.configure_default_column(editable=True, groupable=True)
+        # Attempt to reduce "double-typing" by forcing cell editing to end on blur
+        gb.configure_grid_options(stopEditingWhenCellsLoseFocus=True)
+        gb_options = gb.build()
+
+        st.info("Edit your data below. Scroll horizontally for more columns if needed.")
+
+        # Display data in AgGrid
+        aggrid_return = AgGrid(
+            st.session_state["manual_df"],
+            gridOptions=gb_options,
+            data_return_mode=DataReturnMode.AS_INPUT,
+            update_mode=GridUpdateMode.VALUE_CHANGED,
+            fit_columns_on_grid_load=True,
+            theme="balham",
+            enable_enterprise_modules=False
+        )
+
+        # Update session_state with edited data
+        updated_df = pd.DataFrame(aggrid_return["data"])
+        st.session_state["manual_df"] = updated_df
+
+        # Solve scheduling problem
+        if not st.session_state["is_optimizing"]:
+            if st.button("Solve Scheduling Problem (Manual)"):
+                st.session_state["is_optimizing"] = True
+
+                # 1) Copy manual data into main 'df'
+                st.session_state["df"] = st.session_state["manual_df"].copy()
+                df = st.session_state["df"]
+
+                # Validate input data
+                is_valid, error_message = validate_input_data(df)
+                if not is_valid:
+                    st.error(error_message)
+                    st.session_state["is_optimizing"] = False
+                    return
+
+                # Show a preview
+                st.markdown("### Input Data Preview")
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+                # Configure machine columns
+                with st.sidebar:
+                    st.title("Configure Machine Columns")
+                    machine_columns = st.multiselect(
+                        "Select Machine Columns (in order):",
+                        identify_machine_columns(df),
+                        default=identify_machine_columns(df)
+                    )
+                    st.markdown("---")
+
+                with st.spinner(f"Solving the scheduling problem with {solver_choice}..."):
+                    if solver_choice == "OR-Tools":
+                        results = solve_scheduling_problem(df, machine_columns)
+                    else:
+                        results, model, tasks, machines, x, T, times = solve_scheduling_problem_gurobi(df, machine_columns)
+
+                st.session_state["results"] = results
+                st.session_state["is_optimizing"] = False
+
+        else:
+            st.info("Optimization process interrupted. Please restart the whole program.")
+
+    # -------------------- FILE UPLOAD MODE --------------------
     else:
-        st.info("Optimization process interrupted. Please restart the whole program.")
+        if uploaded_file is not None:
+            try:
+                df = pd.read_excel(uploaded_file)
+                df.columns = df.columns.map(str)  # Ensure string columns
+                # Store in session_state as well
+                st.session_state["df"] = df
+            except Exception as e:
+                st.error(f"Error reading the file: {e}")
+                return
 
-    # 6) If Gurobi is used and we have a partial model, allow "Continue" if feasible but not proven optimal
+            # Validate input data
+            is_valid, error_message = validate_input_data(st.session_state["df"])
+            if not is_valid:
+                st.error(error_message)
+                return
+
+            st.markdown("### Input Data Preview")
+            st.dataframe(st.session_state["df"], use_container_width=True, hide_index=True)
+
+            # Configure machine columns
+            with st.sidebar:
+                st.title("Configure Machine Columns")
+                machine_columns = st.multiselect(
+                    "Select Machine Columns (in order):",
+                    identify_machine_columns(st.session_state["df"]),
+                    default=identify_machine_columns(st.session_state["df"])
+                )
+                st.markdown("---")
+
+            if not st.session_state["is_optimizing"]:
+                if st.button("Solve Scheduling Problem (File)"):
+                    st.session_state["is_optimizing"] = True
+                    with st.spinner(f"Solving the scheduling problem with {solver_choice}..."):
+                        if solver_choice == "OR-Tools":
+                            results = solve_scheduling_problem(st.session_state["df"], machine_columns)
+                        else:
+                            results, model, tasks, machines, x, T, times = solve_scheduling_problem_gurobi(df, machine_columns)
+                            st.session_state["results"] = results  # Only store the `results` dictionary
+                            st.session_state["gurobi_model"] = model
+                            st.session_state["gurobi_data"] = (tasks, machines, x, T, times)
+
+                    st.session_state["results"] = results
+                    st.session_state["is_optimizing"] = False
+
+        else:
+            st.info("Upload an Excel file in the sidebar or switch to Manual Data Input.")
+
+    # ---------- If Gurobi solution is feasible but not proven optimal, allow continuing ----------
     if solver_choice == "Gurobi" and st.session_state.get("gurobi_model") is not None:
         current_results = st.session_state.get("results", {})
         status = current_results.get("status")
-        # Show "Continue" only if the solver is not optimizing *and*
-        # the status is SUBOPTIMAL/TIME_LIMIT/FEASIBLE (i.e., not proven optimal yet)
-        if status in [GRB.SUBOPTIMAL, GRB.TIME_LIMIT, FEASIBLE] and status not in [GRB.OPTIMAL] and not st.session_state["is_optimizing"]:
-            if st.button("Continue Solving for 5 More Minutes"):
-                if st.session_state["is_optimizing"]:
-                    st.error("Optimization process interrupted. Please restart the whole program.")
-                else:
+        # We allow continuing if status is SUBOPTIMAL, TIME_LIMIT, or FEASIBLE
+        if status in [GRB.SUBOPTIMAL, GRB.TIME_LIMIT, FEASIBLE] and status not in [OPTIMAL, GRB.OPTIMAL]:
+            if not st.session_state["is_optimizing"]:
+                if st.button("Continue Solving for 5 More Minutes"):
                     st.session_state["is_optimizing"] = True
-                    gurobi_model = st.session_state.get("gurobi_model", None)
-                    if gurobi_model is not None:
-                        tasks, machines, x, T, times = st.session_state["gurobi_data"]
-                        with st.spinner("Continuing optimization... please wait"):
-                            (
-                                new_results,
-                                updated_model,
-                                tasks,
-                                machines,
-                                x,
-                                T,
-                                times
-                            ) = solve_scheduling_problem_gurobi(
-                                df,
-                                machine_columns,
-                                initial_model=gurobi_model,
-                                tasks=tasks,
-                                machines=machines,
-                                x=x,
-                                T=T,
-                                times=times
-                            )
-                        st.session_state["results"] = new_results
-                        st.session_state["gurobi_model"] = updated_model
+                    gurobi_model = st.session_state["gurobi_model"]
+                    tasks, machines, x, T, times = st.session_state["gurobi_data"]
 
-                        if new_results["status"] == GRB.OPTIMAL:
-                            st.success(f"Optimal solution found! Weighted Tardiness = {new_results['objective']:.1f}")
-                            st.session_state["gurobi_model"] = None
-                        else:
-                            st.success("Continued solving.")
+                    # machine_cols might come from either manual or file
+                    # If we are in manual mode but used Gurobi, we still have st.session_state["df"]
+                    # so let's re-identify columns:
+                    machine_columns = identify_machine_columns(st.session_state["df"])
 
-                st.session_state["is_optimizing"] = False
-        elif status in [GRB.OPTIMAL]:
-            st.info("Already at optimal solution.")
-        # If we are optimizing, or the solver is at an infeasible state, no button is shown
+                    with st.spinner("Continuing optimization..."):
+                        results, model, tasks, machines, x, T, times = solve_scheduling_problem_gurobi(
+                            df=st.session_state["df"],
+                            machine_columns=machine_columns,
+                            initial_model=gurobi_model,   # <--- pass existing model
+                            tasks=tasks,
+                            machines=machines,
+                            x=x,
+                            T=T,
+                            times=times
+                        )
+                        
+                    st.session_state["is_optimizing"] = False
+                    st.session_state["results"] = results
+                    st.session_state["gurobi_model"] = model
+                    st.session_state["gurobi_data"] = (tasks, machines, x, T, times)
 
-    # 7) Display whatever results we have
-    show_current_results(df, solver_choice, machine_columns)
+                    if results["status"] == GRB.OPTIMAL:
+                        st.balloons()
+                        st.success(f"Optimal solution found! Weighted Tardiness = {results['objective']:.1f}")
+                    else:
+                        st.success("Continued solving. Check the updated results.")
+            else:
+                st.info("Optimization process interrupted. Please restart the whole program.")
+
+    # Finally, display results if any
+    if "df" in st.session_state and "results" in st.session_state:
+        show_current_results(
+            st.session_state["df"],
+            solver_choice,
+            identify_machine_columns(st.session_state["df"])
+        )
 
 
+# Run the app
 if __name__ == "__main__":
     main()
