@@ -201,10 +201,10 @@ def main():
         gb = GridOptionsBuilder.from_dataframe(st.session_state["manual_df"])
         gb.configure_default_column(editable=True, groupable=True)
         gb.configure_grid_options(stopEditingWhenCellsLoseFocus=True)
-	gb.configure_column("TaskID", editable=False)
+        gb.configure_column("TaskID", editable=False)
         gb_options = gb.build()
 
-        st.info("Edit your data below. Scroll horizontally for more columns if needed.")
+        st.info("Edit your data below.")
 
         # Create a dynamic key to force AgGrid to refresh properly
         grid_key = f"manual_aggrid_{len(st.session_state['manual_df'])}_{len(st.session_state['manual_df'].columns)}"
