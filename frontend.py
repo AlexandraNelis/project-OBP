@@ -25,8 +25,9 @@ def show_upload_instructions():
            - **DueDate**
            - **Weight**
            - **M1Time**, **M2Time**, etc. *(processing times on each machine)*  
-        3. Configure detected machine columns in the sidebar.  
-        4. Click **Solve Scheduling Problem**.
+        3. Select the preferred solver.
+        4. Configure detected machine columns in the sidebar.  
+        5. Click **Solve Scheduling Problem**.
         """
     )
     st.info("Ensure your file follows the required format to avoid errors.")
@@ -50,6 +51,10 @@ def setup_sidebar():
             ["OR-Tools", "Gurobi"],
             help="Choose the solver to optimize the schedule."
         )
+        st.markdown("""
+            Note that **Google OR-Tools** has a fixed maximum computation time limit of 15 minutes, 
+            while **Gurobi** can display a feasible solution every 5 minutes, until the optimal solution is found.
+            """)
         st.markdown("---")
         
     return uploaded_file, solver_choice
