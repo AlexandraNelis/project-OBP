@@ -201,6 +201,7 @@ def main():
         gb = GridOptionsBuilder.from_dataframe(st.session_state["manual_df"])
         gb.configure_default_column(editable=True, groupable=True)
         gb.configure_grid_options(stopEditingWhenCellsLoseFocus=True)
+	gb.configure_column("TaskID", editable=False)
         gb_options = gb.build()
 
         st.info("Edit your data below. Scroll horizontally for more columns if needed.")
