@@ -121,13 +121,13 @@ def main():
         if "manual_df" not in st.session_state:
             # Start with default columns and one row
             df_init = pd.DataFrame({
-                "TaskID": [1],
+                "TaskID": [0],
                 "ReleaseDate": [0],
-                "DueDate": [10],
-                "Weight": [1],
-                "M1Time": [2],
-                "M2Time": [3],
-                "M3Time": [4]
+                "DueDate": [0],
+                "Weight": [0],
+                "M1Time": [0],
+                "M2Time": [0],
+                "M3Time": [0]
             })
             st.session_state["manual_df"] = df_init
 
@@ -153,11 +153,11 @@ def main():
                 new_row = {
                     "TaskID": new_id,
                     "ReleaseDate": 0,
-                    "DueDate": 10,
-                    "Weight": 1,
-                    "M1Time": 2,
-                    "M2Time": 3,
-                    "M3Time": 4
+                    "DueDate": 0,
+                    "Weight": 0,
+                    "M1Time": 0,
+                    "M2Time": 0,
+                    "M3Time": 0
                 }
                 st.session_state["manual_df"] = pd.concat(
                     [current_df, pd.DataFrame([new_row])],
