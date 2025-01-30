@@ -189,9 +189,9 @@ def create_model_variables(model, tasks, machines, machine_columns, horizon):
         for m_idx in machines:
             duration = times[t_idx][m_idx]
             
-            start_var = model.NewIntVar(0, horizon, f'start_{t_idx}_m{m_idx}')
+            start_var = model.NewIntVar(0, int(horizon), f'start_{t_idx}_m{m_idx}')
             interval_var = model.NewIntervalVar(
-                start_var, duration, start_var + duration, f'interval_{t_idx}_m{m_idx}'
+                start_var, int(duration), start_var + duration, f'interval_{t_idx}_m{m_idx}'
             )
             
             variables['start'][(t_idx, m_idx)] = start_var
