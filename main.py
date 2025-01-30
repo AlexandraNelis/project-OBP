@@ -96,16 +96,22 @@ def main():
 
     switch1 = col1.button("Manual Data Input")
     switch2 = col2.button("Upload Data Input")
-    
+
     with col1:
-        # Switch to manual mode
         if switch1:
             st.session_state["manual_mode"] = True
+            # Clear old results and model so they don't show up
+            st.session_state["results"] = None
+            st.session_state["gurobi_model"] = None
+            st.session_state["is_optimizing"] = False
 
     with col2:
-        # Switch to upload mode
         if switch2:
             st.session_state["manual_mode"] = False
+            # Clear old results and model so they don't show up
+            st.session_state["results"] = None
+            st.session_state["gurobi_model"] = None
+            st.session_state["is_optimizing"] = False
 
     # If user changes solver from a previous run, reset model and results
     if "last_solver" in st.session_state and st.session_state["last_solver"] != solver_choice:
