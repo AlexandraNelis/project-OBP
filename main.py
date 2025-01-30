@@ -181,7 +181,7 @@ def main():
                     st.warning("Cannot delete the last row (at least 1 row is required).")
 
         with row_col2:
-            if st.button("Add Another Machine Column"):
+            if st.button("Add 1 More Machine Column"):
                 # Count how many columns already start with 'M' and end with 'Time'
                 machine_cols = identify_machine_columns(st.session_state["manual_df"])
                 next_machine_index = len(machine_cols) + 1
@@ -200,14 +200,18 @@ def main():
         # Build AgGrid options
         gb = GridOptionsBuilder.from_dataframe(st.session_state["manual_df"])
         gb.configure_default_column(editable=True, groupable=True)
+        gb.configure_grid_options(stopEditingWhenCellsLoseFocus=True)
         gb_options = gb.build()
 
-        st.info("Edit your data below.")
+        st.info("Edit your data below. Scroll horizontally for more columns if needed.")
+
+        # Create a dynamic key to force AgGrid to refresh properly
+        grid_key = f"manual_aggrid_{len(st.session_state['manual_df'])}_{len(st.session_state['manual_df'].columns)}"
 
         # Display data in AgGrid
         aggrid_return = AgGrid(
             st.session_state["manual_df"],
-            key="manual_aggrid",
+            key=grid_key,
             gridOptions=gb_options,
             data_return_mode=DataReturnMode.AS_INPUT,
             update_mode=GridUpdateMode.MODEL_CHANGED,
