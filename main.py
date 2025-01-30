@@ -92,11 +92,11 @@ def solve_gurobi_scheduling_problem(df, machine_columns,time_limit):
                     )
 
     # Solve
+    model.setParam(GRB.Param.TimeLimit, time_limit)  # Stop after 60 seconds
     start_time = time.time()
     model.optimize()
     end_time = time.time()
     print(end_time - start_time)
-    model.setParam(GRB.Param.TimeLimit, time_limit)  # Stop after 60 seconds
 
     status = model.status
     results = {
@@ -317,7 +317,7 @@ def evaluate_solver(min_jobs,max_jobs,min_machines,max_machines,time_limit,batch
             Time_capped = False
             outtime = 0
             for i in range(batch):#uneven number so the ratio will always tip to one side
-                #st.write(f"trial {i+1}")
+                st.write(f"trial {i+1}")
                 machine_columns = [f"Machine {i}" for i in range(1, num_machines + 1)]
                 start_time = time.time()
                 if Solver:
@@ -355,6 +355,7 @@ def evaluate_solver(min_jobs,max_jobs,min_machines,max_machines,time_limit,batch
                 if results[-2]['TimeCapped'] and  results[-1]['TimeCapped']:
                     #st.write(f"No improvement")
                     break          
+    print(results)
     return pd.DataFrame(results),pd.DataFrame([(M, job, value) for M, (job, value) in largest_set_of_jobs.items()], columns=["Number of machines", "Number of jobs", "Objective value"])
 
 def run_batch(df, machine_columns,solver,solving_set,time_limit):
@@ -463,7 +464,7 @@ if option == "Extended solver OR Tools":
     max_machines = st.number_input("Maximum number of machines", min_value=1, step=1)
     time_limit = st.number_input("Search time limit (seconds)", min_value=1, step=1)
     batch = st.number_input("Batch size of trial runs per instance", min_value=1, step=1)
-    ratio = st.number_input("Ratio of difficulty per instance", min_value=0, step=0.1)
+    ratio = st.number_input("Ratio of difficulty per instance", min_value=0.0, step=0.1)
 
     # Run solver only when button is clicked
     if st.button("Run Solver Performance Tests"):
@@ -509,7 +510,7 @@ elif option == "Extended solver Gurobi":
     max_machines = st.number_input("Maximum number of machines", min_value=1, step=1)
     time_limit = st.number_input("Search time limit (seconds)", min_value=1, step=1)
     batch = st.number_input("Batch size of trial runs per instance", min_value=1, step=1)
-    ratio = st.number_input("Ratio of difficulty per instance", min_value=0, step=0.1)
+    ratio = st.number_input("Ratio of difficulty per instance", min_value=0.0, step=0.1)
 
     # Run solver only when button is clicked
     if st.button("Run Solver Performance Tests"):
@@ -558,18 +559,21 @@ elif option =="Ratio comparison":
         with st.spinner("Running tests..."):
             ratio_results=[]
             for ratio in range(1,11):
+                st.markdown(f"the ratio is {ratio}")
+                st.markdown(f"OR tools")
                 or_performance_results, or_largest_set = evaluate_solver(
-                    int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),True,ratio/100
+                    int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),True,ratio/10
                 )
+                st.markdown(f"gurobi")
                 gur_performance_results, gur_largest_set = evaluate_solver(
-                    int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),False,ratio/100
+                    int(min_num_jobs),int(max_num_jobs), int(min_machines),int(max_machines), int(time_limit), int(batch),False,ratio/10
                 )
                 ratio_results.append({"OR status":or_performance_results["SolverStatus"],
                                      "Gurobi status":gur_performance_results["SolverStatus"],
                                     "OR objective":or_largest_set["Objective value"],
                                     "Gurobi Objective":gur_largest_set["Objective value"]})
                 
-                ratio_table = pd.DataFrame(ratio_results)
-                ratio_data = ratio_table.to_csv(index=False).encode("utf-8")
-                ratio_url = create_download_link(ratio_data, 'Ratio results',"csv")
-                st.markdown(ratio_url, unsafe_allow_html=True)
+            ratio_table = pd.DataFrame(ratio_results)
+            ratio_data = ratio_table.to_csv(index=False).encode("utf-8")
+            ratio_url = create_download_link(ratio_data, 'Ratio results',"csv")
+            st.markdown(ratio_url, unsafe_allow_html=True)
